@@ -394,7 +394,10 @@ const SoulAtlasView: React.FC<SoulAtlasViewProps> = ({ domains, mandalaData, len
   }
 
   return (
-    <div className="fixed inset-0 z-40 bg-slate-950/30 backdrop-blur-xl text-slate-200 animate-fade-in flex flex-col" style={{ animationDuration: '500ms' }}>
+    <div 
+        className="fixed top-0 left-0 w-full z-40 bg-slate-950/30 backdrop-blur-xl text-slate-200 animate-fade-in flex flex-col" 
+        style={{ height: 'var(--app-height, 100vh)', animationDuration: '500ms' }}
+    >
       <header className="flex-shrink-0 p-4 md:p-8 flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
             <button onClick={onClose} aria-label="Return to galaxy view">

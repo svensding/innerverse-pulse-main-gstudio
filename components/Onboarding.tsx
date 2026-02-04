@@ -289,8 +289,8 @@ const Onboarding: React.FC<OnboardingProps> = ({
   return (
     // Updated Padding: pb-40 to comfortably clear the bottom area
     <div 
-      className="fixed inset-0 z-50 pointer-events-none flex flex-col justify-end items-center pb-20 md:pb-40 px-6"
-      style={{ transform: 'translate3d(0,0,0)' }} // Fix: UI Decoupling
+      className="fixed top-0 left-0 w-full z-50 pointer-events-none flex flex-col justify-end items-center pb-20 md:pb-40 px-6"
+      style={{ transform: 'translate3d(0,0,0)', height: 'var(--app-height, 100vh)' }}
     >
       
       {/* NO GRADIENT DIV HERE ANYMORE */}

@@ -217,6 +217,19 @@ const App: React.FC = () => {
       }
   };
 
+  // --- VIEWPORT HEIGHT FIX FOR MOBILE ---
+  useEffect(() => {
+    const setAppHeight = () => {
+      const doc = document.documentElement;
+      doc.style.setProperty('--app-height', `${window.innerHeight}px`);
+    };
+    
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    
+    return () => window.removeEventListener('resize', setAppHeight);
+  }, []);
+
   // --- LANGUAGE SWITCHING LOGIC ---
   const handleLanguageChange = (newLang: Language) => {
       setLanguage(newLang);
@@ -511,7 +524,11 @@ const App: React.FC = () => {
   const glassPanelStyle = "bg-black/40 border border-white/10 shadow-2xl transition-all duration-300";
 
   return (
-    <main data-name="main-app-container" className="fixed inset-0 text-slate-200 font-light overflow-hidden w-screen h-screen bg-slate-950">
+    <main 
+      data-name="main-app-container" 
+      className="fixed top-0 left-0 w-full text-slate-200 font-light overflow-hidden bg-slate-950"
+      style={{ height: 'var(--app-height, 100vh)' }}
+    >
       
       {/* 1. Global Background Atmosphere */}
       <Background onboardingStep={showInitialOnboarding ? onboardingStep : 99} />

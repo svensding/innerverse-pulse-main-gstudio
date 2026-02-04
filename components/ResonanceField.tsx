@@ -356,7 +356,10 @@ const ResonanceField: React.FC<ResonanceFieldProps> = ({ domains, mandalaData, o
     };
 
     return (
-        <div className="fixed inset-0 z-50 bg-slate-950 text-slate-200 flex flex-col md:flex-row overflow-hidden font-light">
+        <div 
+            className="fixed top-0 left-0 w-full z-50 bg-slate-950 text-slate-200 flex flex-col md:flex-row overflow-hidden font-light"
+            style={{ height: 'var(--app-height, 100vh)' }}
+        >
             
             <style>{`
                 @keyframes pulse-bright {
