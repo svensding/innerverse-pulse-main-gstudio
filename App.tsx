@@ -1,10 +1,14 @@
 
+// ... (imports remain mostly same)
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Domain, Node, InquiryData, Language, LensData, PrimaryEnergyData, MandalaData, PersonalSpectrum } from './types';
 import { DOMAINS_DATA, UI_STRINGS, ONBOARDING_STEPS, ATTRIBUTE_DEFINITIONS } from './constants';
 import { DOMAINS_DATA_ES, UI_STRINGS_ES, ONBOARDING_STEPS_ES, ATTRIBUTE_DEFINITIONS_ES } from './constants_es';
 import { DOMAINS_DATA_NL, UI_STRINGS_NL, ONBOARDING_STEPS_NL, ATTRIBUTE_DEFINITIONS_NL } from './constants_nl';
 import { calculateMandalaData, calculateLensData, calculatePrimaryEnergyData, calculatePersonalSpectrum } from './utils/cosmosAnalysis';
+
+// Context
+import { PerformanceProvider, usePerformance } from './contexts/PerformanceContext';
 
 import Background from './components/Background';
 import SkyMap from './components/SkyMap';
@@ -15,6 +19,8 @@ import Modal from './components/Modal';
 import IntroTextOverlay from './components/IntroTextOverlay';
 import ConstellationInsight from './components/ConstellationInsight';
 import InsightReadyIndicator from './components/InsightReadyIndicator';
+import GlobalFilters from './components/GlobalFilters';
+import FXControlPanel from './components/dev/FXControlPanel';
 
 import PulseLogo from './components/icons/PulseLogo';
 import BackIcon from './components/icons/BackIcon';
@@ -25,9 +31,13 @@ import LinkIcon from './components/icons/LinkIcon';
 import RestartIcon from './components/icons/RestartIcon';
 import CloseIcon from './components/icons/CloseIcon';
 
-const glassPanelStyle = "bg-black/20 backdrop-blur-xl border border-white/10 shadow-xl";
+const AppContent: React.FC = () => {
+  // Access performance settings for styling logic
+  const { settings } = usePerformance();
+  const glassPanelStyle = settings.glass 
+    ? "bg-black/20 backdrop-blur-xl border border-white/10 shadow-xl" 
+    : "bg-slate-900/95 border border-white/20 shadow-xl";
 
-const App: React.FC = () => {
   // --- STATE ---
   const [language, setLanguage] = useState<Language>('en');
   const [domains, setDomains] = useState<Domain[]>(DOMAINS_DATA);
@@ -42,6 +52,7 @@ const App: React.FC = () => {
   const [showMenu, setShowMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showFXPanel, setShowFXPanel] = useState(false); // FX Toggle
   const [introText, setIntroText] = useState<string | null>(null);
   
   // Data / Persistence
@@ -143,13 +154,13 @@ const App: React.FC = () => {
 
   const handleSelectDomain = (domain: Domain) => {
       setActiveDomain(domain);
-      // Intro text for domain
-      setIntroText(`<span class="text-amber-300 font-bold">${domain.name}</span><br/><span class="text-sm text-slate-300">${currentConstants.ui.domainAwakens}</span>`);
+      // Intro Text Removed based on request
+      setIntroText(null); 
   };
 
   const handleSelectNode = (node: Node) => {
       setSelectedNode(node);
-      setIntroText(null); // Clear overlays when entering detail
+      setIntroText(null); 
   };
 
   const handleAttributeChange = (nodeId: string, attrId: string, value: number) => {
@@ -167,24 +178,54 @@ const App: React.FC = () => {
       });
   };
 
-  // --- NAVIGATION IN DETAIL VIEW ---
-  const currentDomainNodes = activeDomain ? domains.find(d => d.id === activeDomain.id)?.nodes || [] : [];
-  const currentNodeIndex = selectedNode ? currentDomainNodes.findIndex(n => n.id === selectedNode.id) : -1;
-  const hasNext = currentNodeIndex >= 0 && currentNodeIndex < currentDomainNodes.length - 1;
-  const hasPrev = currentNodeIndex > 0;
-
+  // --- NAVIGATION IN DETAIL VIEW (GLOBAL CYCLING) ---
+  const allNodes = useMemo(() => domains.flatMap(d => d.nodes), [domains]);
+  
   const handleSelectNext = () => {
-      if (hasNext) handleSelectNode(currentDomainNodes[currentNodeIndex + 1]);
-      else if (isMapComplete) handleGoHome(); // Easy exit when complete
+      if (!selectedNode) return;
+      
+      // If map is fully complete, the "Next" button acts as "Finish"
+      if (isMapComplete) {
+          handleGoHome();
+          return;
+      }
+
+      const currentIndex = allNodes.findIndex(n => n.id === selectedNode.id);
+      if (currentIndex === -1) return;
+
+      const nextIndex = (currentIndex + 1) % allNodes.length;
+      const nextNode = allNodes[nextIndex];
+      
+      // Auto-switch domain if needed
+      const nextDomainId = nextNode.id.split('-')[0];
+      if (activeDomain?.id !== nextDomainId) {
+          const newDomain = domains.find(d => d.id === nextDomainId);
+          if (newDomain) setActiveDomain(newDomain);
+      }
+      
+      setSelectedNode(nextNode);
   };
   
   const handleSelectPrev = () => {
-      if (hasPrev) handleSelectNode(currentDomainNodes[currentNodeIndex - 1]);
+      if (!selectedNode) return;
+      const currentIndex = allNodes.findIndex(n => n.id === selectedNode.id);
+      if (currentIndex === -1) return;
+
+      const prevIndex = (currentIndex - 1 + allNodes.length) % allNodes.length;
+      const prevNode = allNodes[prevIndex];
+
+      // Auto-switch domain if needed
+      const prevDomainId = prevNode.id.split('-')[0];
+      if (activeDomain?.id !== prevDomainId) {
+          const newDomain = domains.find(d => d.id === prevDomainId);
+          if (newDomain) setActiveDomain(newDomain);
+      }
+
+      setSelectedNode(prevNode);
   };
 
   // --- PERSISTENCE / SAVE ---
   const handleSave = () => {
-      // Mock implementation for demo
       const data = JSON.stringify(domains);
       const blob = new Blob([data], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -231,6 +272,9 @@ const App: React.FC = () => {
   return (
     <div className="relative w-full h-full overflow-hidden bg-slate-950 text-white selection:bg-amber-500/30">
       
+      {/* 0. GLOBAL FILTERS */}
+      <GlobalFilters />
+
       {/* 1. BACKGROUND LAYER */}
       <Background onboardingStep={onboardingStep} />
 
@@ -283,7 +327,7 @@ const App: React.FC = () => {
           {/* Menu Button */}
           <div className="relative pointer-events-auto">
               <button onClick={() => setShowMenu(p => !p)} className={`p-3 rounded-full text-white/70 hover:text-white ${glassPanelStyle}`}><MenuIcon /></button>
-              {/* Menu Dropdown - Clean Glass Style */}
+              {/* Menu Dropdown */}
               {showMenu && <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl overflow-hidden animate-fade-in flex flex-col py-1 ${glassPanelStyle}`}>
                       
                       {/* Menu Lang Toggle */}
@@ -303,6 +347,11 @@ const App: React.FC = () => {
                           </>
                       )}
                       
+                      {/* FX Tuner Toggle */}
+                      <button onClick={() => { setShowMenu(false); setShowFXPanel(true); }} className="flex items-center gap-3 px-4 py-3 text-sm text-amber-200 hover:text-white hover:bg-white/5 text-left border-b border-white/5">
+                          <span className="text-lg leading-none">⚡</span> FX Tuner
+                      </button>
+
                       <button onClick={handleRequestReset} className="flex items-center gap-3 px-4 py-3 text-sm text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 text-left"><RestartIcon /> {currentConstants.ui.restart}</button>
                   </div>}
           </div>
@@ -315,30 +364,28 @@ const App: React.FC = () => {
           data-name="detail-panel"
           className={`
             fixed top-0 right-0 h-full z-40 
-            w-full md:w-1/3 bg-slate-950/90 backdrop-blur-2xl border-l border-white/10 
+            w-full md:w-1/3 
             transition-transform duration-500 ease-in-out shadow-2xl
+            ${settings.glass ? 'bg-slate-950/90 backdrop-blur-2xl' : 'bg-slate-950'}
+            border-l border-white/10 
             ${showDetailPanel ? 'translate-x-0' : 'translate-x-full'}
           `}
       >
           {selectedNode && (
-            <>
-                <button onClick={() => setSelectedNode(null)} className="absolute top-6 right-6 p-2 text-white/50 hover:text-white z-50">
-                    <CloseIcon />
-                </button>
-                <StarDetailView 
-                    star={selectedNode}
-                    isAwakening={false}
-                    onAttributeChange={handleAttributeChange}
-                    onSelectNext={handleSelectNext}
-                    onSelectPrev={handleSelectPrev}
-                    hasNext={hasNext}
-                    hasPrev={hasPrev}
-                    readOnly={isReadOnly}
-                    attributeDefinitions={currentConstants.definitions}
-                    isMapComplete={isMapComplete}
-                    uiStrings={currentConstants.ui}
-                />
-            </>
+            <StarDetailView 
+                star={selectedNode}
+                isAwakening={false}
+                onAttributeChange={handleAttributeChange}
+                onSelectNext={handleSelectNext}
+                onSelectPrev={handleSelectPrev}
+                hasNext={true} // Global cycling enabled
+                hasPrev={true} // Global cycling enabled
+                readOnly={isReadOnly}
+                attributeDefinitions={currentConstants.definitions}
+                isMapComplete={isMapComplete}
+                uiStrings={currentConstants.ui}
+                onClose={() => setSelectedNode(null)}
+            />
           )}
       </div>
 
@@ -400,8 +447,19 @@ const App: React.FC = () => {
           <button onClick={() => setShowShareModal(false)} className="px-6 py-2 bg-white/10 rounded-full hover:bg-white/20">Close</button>
       </Modal>
 
+      {/* 11. FX CONTROL PANEL */}
+      {showFXPanel && <FXControlPanel onClose={() => setShowFXPanel(false)} />}
+
     </div>
   );
 }
+
+const App: React.FC = () => {
+    return (
+        <PerformanceProvider>
+            <AppContent />
+        </PerformanceProvider>
+    );
+};
 
 export default App;

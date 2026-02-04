@@ -128,13 +128,29 @@ const AttributeSlider: React.FC<AttributeSliderProps> = ({ attribute, starName, 
           />
       </div>
 
-      <div className="flex justify-between text-gray-400 mt-2 text-center">
+      <div className="flex justify-between mt-2">
         {spectrum.map((quality, index) => (
           <button
             key={index}
             onClick={() => handleLabelClick(index)}
             disabled={readOnly}
-            className={`transition-all duration-300 w-1/5 px-1 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 rounded-md py-1 text-[11px] ${currentIndex === index ? `font-bold text-sm ${textColors[index]}` : 'opacity-60 hover:opacity-100'} ${readOnly ? 'cursor-default' : ''}`}
+            /* 
+               Updated Styling for Text Wrapping:
+               - w-1/5: Enforce 20% width bucket
+               - flex items-start justify-center: Center alignment, start top
+               - break-words: Allow long words to wrap
+               - leading-tight: Tighter line height for wrapped text
+               - min-h-[24px]: Reserve vertical space
+            */
+            className={`
+                w-1/5 px-0.5 py-1 
+                flex items-start justify-center
+                text-[10px] leading-[1.1] break-words whitespace-normal text-center
+                transition-all duration-300 rounded-md
+                focus:outline-none focus:ring-2 focus:ring-cyan-400/50 
+                ${currentIndex === index ? `font-bold text-xs ${textColors[index]}` : 'opacity-60 hover:opacity-100 text-gray-400'} 
+                ${readOnly ? 'cursor-default' : ''}
+            `}
           >
             {quality}
           </button>

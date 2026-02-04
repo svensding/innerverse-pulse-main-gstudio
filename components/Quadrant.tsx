@@ -1,8 +1,8 @@
 
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Domain, Node } from '../types';
 import Constellation from './Constellation';
+import { usePerformance } from '../contexts/PerformanceContext';
 
 interface QuadrantProps {
   quadrant: Domain;
@@ -21,10 +21,15 @@ interface QuadrantProps {
 const Quadrant: React.FC<QuadrantProps> = ({ quadrant, isActive, isDimmed, selectedStar, isComplete, onboardingStep, awakenedStarId, onSelect, onDeselect, onSelectStar, currentScale }) => {
   const quadrantRef = useRef<HTMLDivElement>(null);
   const [parallax, setParallax] = useState({ x: 0, y: 0 });
+  
+  const { settings } = usePerformance();
 
   useEffect(() => {
-    // Disable parallax on mobile for performance
-    if (window.innerWidth < 768) return;
+    // Check global settings AND screen width
+    if (!settings.parallax || window.innerWidth < 768) {
+        setParallax({ x: 0, y: 0 });
+        return;
+    }
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!quadrantRef.current || !isActive) return;
@@ -36,13 +41,12 @@ const Quadrant: React.FC<QuadrantProps> = ({ quadrant, isActive, isDimmed, selec
     
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
-  }, [isActive]);
+  }, [isActive, settings.parallax]);
 
   return (
     <div
       ref={quadrantRef}
       className={`relative w-full h-full transition-all duration-1000 ease-in-out ${isDimmed ? 'opacity-20 blur-sm grayscale' : 'opacity-100'} overflow-visible pointer-events-none`}
-      // Note: Click handling moved to DomainShape in SkyMap.tsx
     >
       <div 
         className="absolute inset-0 z-10 flex items-center justify-center p-4 transition-transform duration-500 ease-out pointer-events-none"

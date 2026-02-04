@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react';
 import { Domain } from '../types';
 import { getConvexHull, generateSmoothHullPath } from '../utils/geometry';
+import { usePerformance } from '../contexts/PerformanceContext';
 
 interface DomainShapeProps {
   domain: Domain;
@@ -11,6 +12,7 @@ interface DomainShapeProps {
 }
 
 const DomainShape: React.FC<DomainShapeProps> = ({ domain, isActive, onSelect, style }) => {
+  const { settings } = usePerformance();
   
   const getAnchorPoint = (dId: string) => {
       switch(dId) {
@@ -34,7 +36,6 @@ const DomainShape: React.FC<DomainShapeProps> = ({ domain, isActive, onSelect, s
       const path = generateSmoothHullPath(hullPoints, 25);
 
       // 2. Normalized Path for the CSS Clip Path (0..1 coords)
-      // We scale points down by 100, and scale the buffer (25 -> 0.25)
       const normalizedPoints = hullPoints.map(p => ({ x: p.x / 100, y: p.y / 100 }));
       const clip = generateSmoothHullPath(normalizedPoints, 0.25);
 
@@ -43,6 +44,10 @@ const DomainShape: React.FC<DomainShapeProps> = ({ domain, isActive, onSelect, s
 
   const gradientId = `domain-grad-${domain.id}`;
   const clipId = `domain-clip-${domain.id}`;
+
+  // LITE MODE OPTIMIZATION
+  // If glass is disabled, we don't render the complex clipPath/backdrop layer at all.
+  // Instead, we just render the colored blob with higher opacity.
 
   return (
     <>
@@ -69,24 +74,25 @@ const DomainShape: React.FC<DomainShapeProps> = ({ domain, isActive, onSelect, s
                 }
             }}
         >
-            {/* The Frosted Glass Layer - Clipped to the organic shape */}
-            <div 
-                className={`absolute inset-0 transition-all duration-1000 ease-in-out origin-center ${isActive ? 'backdrop-blur-xl' : 'backdrop-blur-sm'}`}
-                style={{ 
-                    clipPath: `url(#${clipId})`,
-                    // We apply the same scale transform here to match the inner SVG
-                    // Fix: Force GPU Layer Promotion to prevent flickering
-                    transform: isActive ? 'scale(2.5) translateZ(0)' : 'scale(1) translateZ(0)',
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden'
-                }} 
-            />
+            {/* 1. The Frosted Glass Layer - Only if Enabled */}
+            {settings.glass && (
+                <div 
+                    className={`absolute inset-0 transition-all duration-1000 ease-in-out origin-center ${isActive ? 'backdrop-blur-xl' : 'backdrop-blur-sm'}`}
+                    style={{ 
+                        clipPath: `url(#${clipId})`,
+                        transform: isActive ? 'scale(2.5) translateZ(0)' : 'scale(1) translateZ(0)',
+                        backfaceVisibility: 'hidden',
+                        WebkitBackfaceVisibility: 'hidden'
+                    }} 
+                />
+            )}
 
-            {/* The Colored Blob Layer */}
-            <svg viewBox="0 0 100 100" width="100%" height="100%" className="overflow-visible absolute inset-0" style={{ filter: 'blur(12px)' }}>
+            {/* 2. The Colored Blob Layer */}
+            <svg viewBox="0 0 100 100" width="100%" height="100%" className="overflow-visible absolute inset-0" style={{ filter: settings.distortion ? 'url(#domain-blur)' : 'none' }}>
                 <path 
                     d={shapePath} 
-                    fill={`url(#${gradientId})`}
+                    fill={settings.glass ? `url(#${gradientId})` : domain.gradient.start} // Solid color fallback if glass off (for better visibility)
+                    fillOpacity={settings.glass ? 1 : 0.1}
                     className={`transition-all duration-1000 ease-in-out cursor-pointer origin-center ${
                         isActive 
                         ? 'scale-[2.5] opacity-60' 

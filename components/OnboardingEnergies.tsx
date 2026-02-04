@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { usePerformance } from '../contexts/PerformanceContext';
 
 interface OnboardingEnergiesProps {
   onboardingStep: number;
@@ -7,6 +8,8 @@ interface OnboardingEnergiesProps {
 }
 
 const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep, isZoomed = false }) => {
+    const { settings } = usePerformance();
+    
     // Core Colors
     const C_DO = '#e11d48';   // Red (West)
     const C_BE = '#06b6d4';   // Cyan (East)
@@ -32,7 +35,11 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
     const getOpacity = (energyStep: number) => {
         // Reduced ambient opacities for less distraction
         if (isZoomed) return 0.1;
-        if (isMixing) return 0.2;
+        
+        // During Mixing/Map view (Step 10+ or 99)
+        // We boost opacity here because we rely on the animation to pulse it.
+        // If we set it too low here, the base level is invisible.
+        if (isMixing) return 0.6; 
         
         // During Pause Step (9), all should be bright and visible to mix
         if (isPause) return 1.0;
@@ -55,9 +62,9 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
         return '0s';
     };
 
-    // Mix Blend Mode Override for Step 9
-    // During Step 9 (Circle), we need mix-blend-screen to create white where they overlap.
-    const blendMode = 'mix-blend-screen';
+    // PERFORMANCE: Use settings.blending to toggle expensive blend modes
+    // mix-blend-screen is beautiful but expensive. 'normal' is cheap.
+    const blendMode = settings.blending ? 'mix-blend-screen' : 'mix-blend-normal';
 
     return (
         <div className="absolute inset-0 z-0 pointer-events-none overflow-visible">
@@ -88,10 +95,10 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
                     } 
                 }
                 
-                /* Infinite loop for mixing */
+                /* Infinite loop for mixing - BOOSTED OPACITY */
                 @keyframes pulse-mixing {
                     0% { transform: scale(0.8); opacity: 0; }
-                    20% { opacity: 0.5; }
+                    20% { opacity: 0.8; } /* Boosted from 0.5 to 0.8 for visibility */
                     100% { transform: scale(3.5); opacity: 0; }
                 }
                 @keyframes pulse-white {
@@ -104,13 +111,15 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
             <div className="absolute inset-0 flex items-center justify-center">
                 
                 {/* --- LAYER 1: PULSE WAKE (The Void Background) --- */}
-                <div 
-                    className="absolute w-[300vw] h-[300vw] rounded-full animate-pulse opacity-10"
-                    style={{
-                        background: 'radial-gradient(circle, transparent 0%, transparent 20%, rgba(255,255,255,0.02) 40%, transparent 80%)',
-                        animationDuration: '24s'
-                    }}
-                />
+                {settings.particles && (
+                    <div 
+                        className="absolute w-[300vw] h-[300vw] rounded-full animate-pulse opacity-10"
+                        style={{
+                            background: 'radial-gradient(circle, transparent 0%, transparent 20%, rgba(255,255,255,0.02) 40%, transparent 80%)',
+                            animationDuration: '24s'
+                        }}
+                    />
+                )}
 
                 {/* --- LAYER 2: DIRECTIONAL PULSES --- */}
                 
@@ -123,7 +132,7 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
                         maskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
                         WebkitMaskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
                         opacity: getOpacity(4),
-                        animation: activeDo || isPause ? `${isMixing ? 'pulse-mixing 12s infinite linear' : 'pulse-intro 8s ease-out infinite'}` : 'none',
+                        animation: settings.animations && (activeDo || isPause) ? `${isMixing ? 'pulse-mixing 12s infinite linear' : 'pulse-intro 8s ease-out infinite'}` : 'none',
                         animationDelay: getDelay(0)
                     }}
                 />
@@ -137,7 +146,7 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
                         maskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
                         WebkitMaskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
                         opacity: getOpacity(5),
-                        animation: activeBe || isPause ? `${isMixing ? 'pulse-mixing 12s infinite linear' : 'pulse-intro 8s ease-out infinite'}` : 'none',
+                        animation: settings.animations && (activeBe || isPause) ? `${isMixing ? 'pulse-mixing 12s infinite linear' : 'pulse-intro 8s ease-out infinite'}` : 'none',
                         animationDelay: getDelay(1)
                     }}
                 />
@@ -151,7 +160,7 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
                         maskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
                         WebkitMaskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
                         opacity: getOpacity(6),
-                        animation: activeSee || isPause ? `${isMixing ? 'pulse-mixing 12s infinite linear' : 'pulse-intro 8s ease-out infinite'}` : 'none',
+                        animation: settings.animations && (activeSee || isPause) ? `${isMixing ? 'pulse-mixing 12s infinite linear' : 'pulse-intro 8s ease-out infinite'}` : 'none',
                         animationDelay: getDelay(2)
                     }}
                 />
@@ -165,39 +174,17 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
                         maskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
                         WebkitMaskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
                         opacity: getOpacity(7),
-                        animation: activeFeel || isPause ? `${isMixing ? 'pulse-mixing 12s infinite linear' : 'pulse-intro 8s ease-out infinite'}` : 'none',
+                        animation: settings.animations && (activeFeel || isPause) ? `${isMixing ? 'pulse-mixing 12s infinite linear' : 'pulse-intro 8s ease-out infinite'}` : 'none',
                         animationDelay: getDelay(3)
                     }}
                 />
-
-                {/* --- LAYER 3: CORE WHITE / UNITY PULSE --- */}
-                {/* 
-                    If isMixing (Step 10+), we show a 'Unity Pulse' that combines all colors.
-                    This fires at delay 8s (after the 0,2,4,6s individual pulses).
-                */}
-                {isMixing && (
-                    <div 
-                        className={`absolute ${blendMode} transition-opacity duration-1000`}
-                        style={{
-                            width: '80vmin', height: '80vmin', borderRadius: '50%',
-                            // Conic gradient blending all 4
-                            background: `conic-gradient(from 0deg, ${C_SEE}, ${C_BE}, ${C_FEEL}, ${C_DO}, ${C_SEE})`,
-                            maskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
-                            WebkitMaskImage: 'radial-gradient(circle, transparent 25%, rgba(0,0,0,0.5) 45%, black 60%, transparent 70%)',
-                            opacity: isZoomed ? 0.1 : 0.4,
-                            animation: 'pulse-mixing 12s infinite linear',
-                            animationDelay: '8s', // Fires after the last directional pulse (6s)
-                            filter: 'blur(20px)'
-                        }}
-                    />
-                )}
 
                 {/* Pure White Core (The Source) - Always active but prominent in pause */}
                 <div 
                     className="absolute border border-white/20 z-10"
                     style={{
                         width: '40vmin', height: '40vmin', borderRadius: '50%',
-                        animation: 'pulse-white 16s infinite linear',
+                        animation: settings.animations ? 'pulse-white 16s infinite linear' : 'none',
                         boxShadow: '0 0 40px rgba(255,255,255,0.1)',
                         opacity: isZoomed ? 0.1 : (isPause ? 1 : 0.6)
                     }}

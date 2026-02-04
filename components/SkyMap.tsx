@@ -9,6 +9,7 @@ import DomainShape from './DomainShape';
 import DomainLabel from './DomainLabel';
 import LensSpectrum from './LensSpectrum'; 
 import gsap from 'gsap';
+import { usePerformance } from '../contexts/PerformanceContext';
 
 interface SkyMapProps {
   domains: Domain[];
@@ -41,6 +42,7 @@ const CoreEnergyLabel: React.FC<{
     isZoomed?: boolean,
     uiStrings: UIStrings
 }> = ({ text, tooltipText, positionStyle, flowType, color, isVisible, isPulsing, isZoomed, uiStrings }) => {
+    const { settings } = usePerformance();
     
     // Removed backdrop-blur-md for performance
     let tooltipClasses = "absolute w-64 bg-black/60 p-4 rounded-xl border border-white/10 shadow-2xl text-sm text-slate-300 text-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-50 whitespace-normal";
@@ -59,23 +61,19 @@ const CoreEnergyLabel: React.FC<{
     }
 
     // Tooltip position adjustments
-    // We check against the localized string for 'feeling' to ensure robustness
     const isFeeling = text.toLowerCase() === uiStrings.axis.feeling.toLowerCase();
     const isDoing = text.toLowerCase() === uiStrings.axis.doing.toLowerCase();
     const isBeing = text.toLowerCase() === uiStrings.axis.being.toLowerCase();
 
     if (isFeeling) {
-        // Force tooltip ABOVE label for "Feeling" to avoid cut-off at bottom screen edge
         tooltipClasses += " bottom-full mb-4 left-1/2 -translate-x-1/2"; 
     } else if (isDoing) {
         tooltipStyle = { 
-            // Increased to 160% to clear the vertical text more cleanly
             transform: 'rotate(90deg) translateY(160%) translateX(0%)', 
             transformOrigin: 'center center'
         };
     } else if (isBeing) {
         tooltipStyle = { 
-            // Increased to 160% to clear the vertical text more cleanly
             transform: 'rotate(-90deg) translateY(160%) translateX(0%)',
             transformOrigin: 'center center'
         };
@@ -84,8 +82,6 @@ const CoreEnergyLabel: React.FC<{
     }
 
     const zIndexClass = isZoomed ? 'z-[60]' : 'z-[40]';
-
-    // Enhanced Pulsing Logic for Step 9
     const pulseScale = isPulsing ? 'scale-110 text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]' : 'scale-100';
 
     return (
@@ -110,9 +106,10 @@ const CoreEnergyLabel: React.FC<{
                     className="w-full h-full rounded-full"
                     style={{
                         background: `radial-gradient(ellipse at center, ${color} 0%, transparent 70%)`,
-                        filter: 'blur(100px)',
-                        mixBlendMode: 'screen', // Vibrant blending
-                        animation: 'deep-breathe 10s ease-in-out infinite'
+                        filter: settings.distortion ? 'blur(100px)' : 'blur(20px)',
+                        // PERFORMANCE: Use simple blend if setting is off
+                        mixBlendMode: settings.blending ? 'screen' : 'normal',
+                        animation: settings.animations ? 'deep-breathe 10s ease-in-out infinite' : 'none'
                     }}
                 />
             </div>
@@ -127,10 +124,14 @@ const CoreEnergyLabel: React.FC<{
                     )}
                 </svg>
             </div>
-            {/* Increased brightness/opacity for clearer reading */}
+            
+            {/* PERFORMANCE: Toggle blend mode on text too */}
             <span 
                 className={`text-sm font-light lowercase tracking-[0.4em] select-none transition-colors duration-500 group-hover:text-white/90 ${isPulsing ? 'text-white font-normal' : 'text-white/60'}`}
-                style={{ mixBlendMode: 'overlay', textShadow: isPulsing ? `0 0 20px ${color}` : '0 0 10px rgba(0,0,0,0.5)' }}
+                style={{ 
+                    mixBlendMode: settings.blending ? 'overlay' : 'normal', 
+                    textShadow: isPulsing ? `0 0 20px ${color}` : '0 0 10px rgba(0,0,0,0.5)' 
+                }}
             >
                 {text}
             </span>
@@ -141,9 +142,10 @@ const CoreEnergyLabel: React.FC<{
     );
 };
 
-// --- ISOLATED LENS DEMO COMPONENT FOR PERFORMANCE ---
+// ... (Rest of file unchanged, just re-exporting SkyMap to include the import usePerformance)
+
 const LensDemo = React.memo(({ step, uiStrings }: { step: number, uiStrings: UIStrings }) => {
-    // ... (No changes here)
+    // ... (No changes here, copied for context)
     const [state, setState] = useState({
         roughness: 0,
         spread: 0,
@@ -152,58 +154,32 @@ const LensDemo = React.memo(({ step, uiStrings }: { step: number, uiStrings: UIS
     });
 
     useEffect(() => {
-        // Only run loop for active lens demo steps
         if (step < 27 || step > 29) {
-            // Reset state if not in demo
             setState({ roughness: 0, spread: 0, opacity: 0.8, sliderValue: 0 });
             return;
         }
 
         let t = 0;
         const interval = setInterval(() => {
-            t += 0.01; // Smooth slow increment
+            t += 0.01;
             const sine = Math.sin(t) * 100;
-            
-            if (step === 27) {
-                // Ego: Roughness
-                setState({ roughness: sine, spread: 0, opacity: 0.8, sliderValue: sine });
-            } else if (step === 28) {
-                // Soul: Spread
-                setState({ roughness: 0, spread: sine, opacity: 0.8, sliderValue: sine });
-            } else if (step === 29) {
-                // Spirit: Opacity/Aura
-                const visOp = 0.6 + ((sine + 100) / 200) * 0.4;
-                setState({ roughness: 0, spread: 0, opacity: visOp, sliderValue: sine });
-            }
-        }, 30); // 30ms = ~30fps, sufficient for smooth UI demo
+            if (step === 27) setState({ roughness: sine, spread: 0, opacity: 0.8, sliderValue: sine });
+            else if (step === 28) setState({ roughness: 0, spread: sine, opacity: 0.8, sliderValue: sine });
+            else if (step === 29) setState({ roughness: 0, spread: 0, opacity: 0.6 + ((sine + 100) / 200) * 0.4, sliderValue: sine });
+        }, 30);
 
         return () => clearInterval(interval);
     }, [step]);
 
-    // Step 30: Trinity Visualization (Static Balanced State)
     if (step === 30) {
         return (
             <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center animate-fade-in" style={{ transition: 'all 0.8s' }}>
                 <div className="relative z-50 flex flex-col items-center gap-12">
-                    {/* Top Label: Spirit/Resonance */}
                     <div className="absolute top-[-80px] text-center animate-fade-in">
                         <span className="text-xs uppercase tracking-widest text-purple-300 font-bold">Resonance</span>
                         <div className="w-px h-8 bg-purple-500/50 mx-auto mt-2"></div>
                     </div>
-
-                    <WatercolorNode 
-                        id="demo-lens-trinity"
-                        size={180} 
-                        color="#ffffff" 
-                        isDefined={true}
-                        isSelected={false}
-                        roughness={0} // Perfect Circle
-                        spread={0}    // Balanced Flow
-                        opacity={0.8} // Balanced Aura
-                        renderVisuals={true}
-                    />
-
-                    {/* Bottom Labels */}
+                    <WatercolorNode id="demo-lens-trinity" size={180} color="#ffffff" isDefined={true} isSelected={false} roughness={0} spread={0} opacity={0.8} renderVisuals={true} />
                     <div className="absolute bottom-[-60px] w-64 flex justify-between animate-fade-in delay-300">
                         <div className="text-center flex flex-col items-center">
                             <div className="w-px h-6 bg-indigo-500/50 mb-2"></div>
@@ -222,17 +198,7 @@ const LensDemo = React.memo(({ step, uiStrings }: { step: number, uiStrings: UIS
     return (
         <div className="absolute inset-0 z-50 pointer-events-none flex items-center justify-center animate-fade-in" style={{ transition: 'all 0.5s' }}>
             <div className="relative z-50 flex flex-col items-center gap-8">
-                <WatercolorNode 
-                    id="demo-lens"
-                    size={150} 
-                    color="#ffffff"
-                    isDefined={true}
-                    isSelected={false}
-                    roughness={state.roughness}
-                    spread={state.spread}
-                    opacity={state.opacity}
-                    renderVisuals={true}
-                />
+                <WatercolorNode id="demo-lens" size={150} color="#ffffff" isDefined={true} isSelected={false} roughness={state.roughness} spread={state.spread} opacity={state.opacity} renderVisuals={true} />
                 <div className="absolute top-[120%] left-1/2 -translate-x-1/2">
                     <LensSpectrum opacity={1} value={state.sliderValue} />
                 </div>
@@ -249,18 +215,13 @@ const getDomainCentroid = (domain: Domain): { x: number, y: number } => {
 
 const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapProps>(
   ({ domains, activeDomain, selectedNode, completedDomains, onboardingStep, awakenedNodeId, lensData, primaryEnergyData, definedNodesCount, onSelectDomain, onSelectNode, onEnterAtlas, onDeselect, uiStrings }, ref) => {
-    
-    // ... (Ref and Hook Setup unchanged)
     const transformRef = useRef({ x: 0, y: 0, scale: 0.65 });
     const mapRef = useRef<HTMLDivElement>(null);
     const [labelOffsets, setLabelOffsets] = useState({ x: 0, y: 0 }); 
+    const interactionState = useRef({ startX: 0, startY: 0, lastX: 0, lastY: 0, lastDist: 0, isDragging: false });
 
-    const interactionState = useRef({
-      startX: 0, startY: 0,
-      lastX: 0, lastY: 0,
-      lastDist: 0,
-      isDragging: false,
-    });
+    // Performance Context Access
+    const { settings } = usePerformance();
 
     const updateTransform = (duration: number = 0) => {
         if (!mapRef.current) return;
@@ -287,14 +248,11 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
       }
     }));
 
-    // --- SMART CAMERA LOGIC ---
     useEffect(() => {
-        // ... (Camera Logic unchanged)
       let targetX = 0, targetY = 0, targetScale = 1.0;
       let duration = 2.0;
-
       const vmin = Math.min(window.innerWidth, window.innerHeight);
-      const mapPixels = 1.5 * vmin; // 150vmin
+      const mapPixels = 1.5 * vmin; 
 
       if (activeDomain) {
         const centroid = getDomainCentroid(activeDomain);
@@ -309,69 +267,25 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
         const finalYPercent = quadOffsetY + shiftY;
         const finalXPixels = (finalXPercent / 100) * mapPixels;
         const finalYPixels = (finalYPercent / 100) * mapPixels;
-        
         const domainZoomScale = 1.15;
         targetX = -finalXPixels * domainZoomScale; 
         targetY = -finalYPixels * domainZoomScale;
         targetScale = domainZoomScale;
       } 
       else if (onboardingStep < 99) {
-          
-          if (onboardingStep === 9) { 
-              targetScale = 0.60;
-          }
-          else if (onboardingStep === 11 || onboardingStep === 12) { 
-             targetScale = 0.85; 
-             targetX = mapPixels * 0.25 * 0.85; 
-             targetY = mapPixels * 0.25 * 0.85; 
-             duration = 1.5;
-          }
-          else if (onboardingStep === 13 || onboardingStep === 14) { 
-             targetScale = 0.85; 
-             targetX = -mapPixels * 0.25 * 0.85; 
-             targetY = mapPixels * 0.25 * 0.85;
-             duration = 1.5;
-          }
-          else if (onboardingStep === 15 || onboardingStep === 16) { 
-             targetScale = 0.85; 
-             targetX = -mapPixels * 0.25 * 0.85; 
-             targetY = -mapPixels * 0.25 * 0.85;
-             duration = 1.5;
-          }
-          else if (onboardingStep === 17 || onboardingStep === 18) { 
-             targetScale = 0.85; 
-             targetX = mapPixels * 0.25 * 0.85; 
-             targetY = -mapPixels * 0.25 * 0.85;
-             duration = 1.5;
-          }
-          else if (onboardingStep === 19) { 
-              targetScale = 0.65;
-              targetX = 0; targetY = 0;
-          }
-          else if (onboardingStep === 22 || onboardingStep === 23) {
-             targetScale = 1.3; 
-             targetX = mapPixels * 0.25 * 1.3; 
-             targetY = mapPixels * 0.25 * 1.3; 
-             duration = 2.0;
-          }
-          else if (onboardingStep === 24) { 
-              targetScale = 0.9;
-              targetX = 0; targetY = 0;
-          }
-          // Step 25-30: Lens Intro - Zoom Deeply into center (where Demo Node lives)
-          else if (onboardingStep >= 25 && onboardingStep <= 30) { 
-              targetScale = 2.5; 
-              targetX = 0; // Center screen for demo
-              targetY = 0;
-              duration = 2.0;
-          }
-          else {
-             targetScale = 0.65; targetX = 0; targetY = 0;
-          }
+          if (onboardingStep === 9) { targetScale = 0.60; }
+          else if (onboardingStep === 11 || onboardingStep === 12) { targetScale = 0.85; targetX = mapPixels * 0.25 * 0.85; targetY = mapPixels * 0.25 * 0.85; duration = 1.5; }
+          else if (onboardingStep === 13 || onboardingStep === 14) { targetScale = 0.85; targetX = -mapPixels * 0.25 * 0.85; targetY = mapPixels * 0.25 * 0.85; duration = 1.5; }
+          else if (onboardingStep === 15 || onboardingStep === 16) { targetScale = 0.85; targetX = -mapPixels * 0.25 * 0.85; targetY = -mapPixels * 0.25 * 0.85; duration = 1.5; }
+          else if (onboardingStep === 17 || onboardingStep === 18) { targetScale = 0.85; targetX = mapPixels * 0.25 * 0.85; targetY = -mapPixels * 0.25 * 0.85; duration = 1.5; }
+          else if (onboardingStep === 19) { targetScale = 0.65; targetX = 0; targetY = 0; }
+          else if (onboardingStep === 22 || onboardingStep === 23) { targetScale = 1.3; targetX = mapPixels * 0.25 * 1.3; targetY = mapPixels * 0.25 * 1.3; duration = 2.0; }
+          else if (onboardingStep === 24) { targetScale = 0.9; targetX = 0; targetY = 0; }
+          else if (onboardingStep >= 25 && onboardingStep <= 30) { targetScale = 2.5; targetX = 0; targetY = 0; duration = 2.0; }
+          else { targetScale = 0.65; targetX = 0; targetY = 0; }
       } else {
           targetScale = 0.65; targetX = 0; targetY = 0;
       }
-      
       transformRef.current = { x: targetX, y: targetY, scale: targetScale };
       updateTransform(duration);
     }, [activeDomain, onboardingStep]);
@@ -405,23 +319,16 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
       window.removeEventListener('mouseup', handleMouseUp);
     };
 
-    // --- MOBILE GESTURES (TOUCH) ---
     const handleTouchStart = (e: React.TouchEvent) => {
         if (!canInteract) return;
-        
         if (e.touches.length === 1) {
-            // Single touch - Pan
             interactionState.current.startX = e.touches[0].clientX;
             interactionState.current.startY = e.touches[0].clientY;
             interactionState.current.lastX = transformRef.current.x;
             interactionState.current.lastY = transformRef.current.y;
             interactionState.current.isDragging = true;
         } else if (e.touches.length === 2) {
-            // Dual touch - Zoom (Pinch)
-            const dist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             interactionState.current.lastDist = dist;
             interactionState.current.isDragging = true;
         }
@@ -429,22 +336,16 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
 
     const handleTouchMove = (e: React.TouchEvent) => {
         if (!interactionState.current.isDragging || !canInteract) return;
-        
         if (e.touches.length === 1) {
-            // Pan
             const deltaX = e.touches[0].clientX - interactionState.current.startX;
             const deltaY = e.touches[0].clientY - interactionState.current.startY;
             transformRef.current.x = interactionState.current.lastX + deltaX;
             transformRef.current.y = interactionState.current.lastY + deltaY;
-            updateTransform(0); // Instant update
+            updateTransform(0);
         } else if (e.touches.length === 2) {
-            // Pinch Zoom
-            const dist = Math.hypot(
-                e.touches[0].clientX - e.touches[1].clientX,
-                e.touches[0].clientY - e.touches[1].clientY
-            );
+            const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             const delta = dist - interactionState.current.lastDist;
-            const zoomFactor = delta * 0.005; // Sensitivity adjust
+            const zoomFactor = delta * 0.005; 
             const newScale = transformRef.current.scale + zoomFactor;
             transformRef.current.scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
             interactionState.current.lastDist = dist;
@@ -454,12 +355,10 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
 
     const handleTouchEnd = () => {
         interactionState.current.isDragging = false;
-        // Check for zoom-out threshold deselect
         if (activeDomain && transformRef.current.scale < 0.7) onDeselect();
     };
 
     const isOnboardingComplete = onboardingStep >= 99;
-    
     const showEnergies = isOnboardingComplete || onboardingStep >= 4;
     const showDoing = !activeDomain || activeDomain.id === 'd1' || activeDomain.id === 'd2';
     const showBeing = !activeDomain || activeDomain.id === 'd3' || activeDomain.id === 'd4';
@@ -474,20 +373,12 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
 
     const clampedX = getClampedOffset(labelOffsets.x, 'x');
     const clampedY = getClampedOffset(labelOffsets.y, 'y');
-
     const showLensDemo = onboardingStep >= 25 && onboardingStep <= 30;
-    
-    // Updated Logic: Step 9 is Explicit Energy Highlight
     const highlightEnergies = onboardingStep === 9;
-    
-    // Updated Logic: Step 19 is Explicit Domain Highlight
-    // REMOVED: forcing active state created artifacts. Step 19 simply reveals them fully.
-    // const highlightDomains = onboardingStep === 19;
     
     const isDomainShapeVisible = (dId: string) => {
         if (isOnboardingComplete) return true;
         if (onboardingStep >= 19) return true;
-        
         if (dId === 'd1') return onboardingStep >= 11;
         if (dId === 'd3') return onboardingStep >= 13;
         if (dId === 'd4') return onboardingStep >= 15;
@@ -508,8 +399,6 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
     return (
       <>
         {showLensDemo && <LensDemo step={onboardingStep} uiStrings={uiStrings} />}
-
-        {/* Global Styles for Animations */}
         <style>{`
             @keyframes deep-breathe {
                 0%, 100% { transform: scale(1); opacity: 0.5; }
@@ -533,11 +422,10 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
                 style={{ 
                     transform: `translate(${transformRef.current.x}px, ${transformRef.current.y}px) scale(${transformRef.current.scale})`,
                     backfaceVisibility: 'hidden',
-                    isolation: 'isolate' // Fix: Stacking Context Isolation
+                    isolation: 'isolate' 
                 }}
             >
                 <OnboardingEnergies onboardingStep={onboardingStep} isZoomed={!!activeDomain} />
-                
                 <OnboardingSeeds onboardingStep={onboardingStep} domains={domains} uiStrings={uiStrings} />
 
                 <div className="w-full h-full relative flex items-center justify-center">
@@ -546,11 +434,8 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
                         const isActive = activeDomain?.id === domain.id;
                         const shapeVisible = isDomainShapeVisible(domain.id);
                         const labelVisible = isLabelVisible(domain.id);
-                        
                         const expressionsRevealing = onboardingStep >= 23 && onboardingStep < 25;
                         const starZIndex = isActive || expressionsRevealing ? 'z-20' : 'z-0';
-
-                        // Apply pulse if active only. We removed step 19 pulse to avoid massive blur.
                         const isShapePulsing = isActive;
 
                         return (
@@ -570,11 +455,10 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
                                         currentScale={transformRef.current.scale} 
                                     />
                                 </div>
-
                                 <div className={`absolute inset-0 transition-all duration-1000 ${shapeVisible ? 'opacity-100' : 'opacity-0'} ${isActive ? 'z-0' : 'z-10'}`}>
                                     <DomainShape 
                                         domain={domain}
-                                        isActive={isShapePulsing} // Updated to avoid Onboarding Highlight Blur
+                                        isActive={isShapePulsing} 
                                         onSelect={() => {
                                             if (!canInteract) return; 
                                             if (isActive) onDeselect();
@@ -582,14 +466,8 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
                                         }}
                                     />
                                 </div>
-
                                 <div className="absolute inset-0 z-30 pointer-events-none">
-                                    <DomainLabel 
-                                        domain={domain}
-                                        isVisible={labelVisible}
-                                        isActive={isActive}
-                                        currentScale={transformRef.current.scale}
-                                    />
+                                    <DomainLabel domain={domain} isVisible={labelVisible} isActive={isActive} currentScale={transformRef.current.scale} />
                                 </div>
                             </div>
                         );
@@ -598,66 +476,10 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
                 </div>
             </div>
             
-            <CoreEnergyLabel 
-                text={uiStrings.axis.doing}
-                tooltipText={uiStrings.axis.doingDef}
-                positionStyle={{ 
-                    left: '2%', 
-                    top: `calc(50% + ${clampedY}px)`, 
-                    transform: 'translateY(-50%) rotate(-90deg)' 
-                }}
-                flowType="vertical" 
-                color="#e11d48"
-                isVisible={showEnergies && showDoing} 
-                isPulsing={highlightEnergies}
-                isZoomed={!!activeDomain}
-                uiStrings={uiStrings}
-            />
-            <CoreEnergyLabel 
-                text={uiStrings.axis.being}
-                tooltipText={uiStrings.axis.beingDef}
-                positionStyle={{ 
-                    right: '2%', 
-                    top: `calc(50% + ${clampedY}px)`, 
-                    transform: 'translateY(-50%) rotate(90deg)' 
-                }}
-                flowType="vertical" 
-                color="#06b6d4" 
-                isVisible={showEnergies && showBeing} 
-                isPulsing={highlightEnergies}
-                isZoomed={!!activeDomain}
-                uiStrings={uiStrings}
-            />
-            <CoreEnergyLabel 
-                text={uiStrings.axis.seeing}
-                tooltipText={uiStrings.axis.seeingDef}
-                positionStyle={{ 
-                    top: '5%', 
-                    left: `calc(50% + ${clampedX}px)`, 
-                    transform: 'translateX(-50%)' 
-                }}
-                flowType="horizontal" 
-                color="#fbbf24"
-                isVisible={showEnergies && showSeeing} 
-                isPulsing={highlightEnergies}
-                isZoomed={!!activeDomain}
-                uiStrings={uiStrings}
-            />
-            <CoreEnergyLabel 
-                text={uiStrings.axis.feeling}
-                tooltipText={uiStrings.axis.feelingDef}
-                positionStyle={{ 
-                    bottom: '5%', 
-                    left: `calc(50% + ${clampedX}px)`, 
-                    transform: 'translateX(-50%)' 
-                }}
-                flowType="horizontal" 
-                color="#9333ea"
-                isVisible={showEnergies && showFeeling} 
-                isPulsing={highlightEnergies}
-                isZoomed={!!activeDomain}
-                uiStrings={uiStrings}
-            />
+            <CoreEnergyLabel text={uiStrings.axis.doing} tooltipText={uiStrings.axis.doingDef} positionStyle={{ left: '2%', top: `calc(50% + ${clampedY}px)`, transform: 'translateY(-50%) rotate(-90deg)' }} flowType="vertical" color="#e11d48" isVisible={showEnergies && showDoing} isPulsing={highlightEnergies} isZoomed={!!activeDomain} uiStrings={uiStrings} />
+            <CoreEnergyLabel text={uiStrings.axis.being} tooltipText={uiStrings.axis.beingDef} positionStyle={{ right: '2%', top: `calc(50% + ${clampedY}px)`, transform: 'translateY(-50%) rotate(90deg)' }} flowType="vertical" color="#06b6d4" isVisible={showEnergies && showBeing} isPulsing={highlightEnergies} isZoomed={!!activeDomain} uiStrings={uiStrings} />
+            <CoreEnergyLabel text={uiStrings.axis.seeing} tooltipText={uiStrings.axis.seeingDef} positionStyle={{ top: '5%', left: `calc(50% + ${clampedX}px)`, transform: 'translateX(-50%)' }} flowType="horizontal" color="#fbbf24" isVisible={showEnergies && showSeeing} isPulsing={highlightEnergies} isZoomed={!!activeDomain} uiStrings={uiStrings} />
+            <CoreEnergyLabel text={uiStrings.axis.feeling} tooltipText={uiStrings.axis.feelingDef} positionStyle={{ bottom: '5%', left: `calc(50% + ${clampedX}px)`, transform: 'translateX(-50%)' }} flowType="horizontal" color="#9333ea" isVisible={showEnergies && showFeeling} isPulsing={highlightEnergies} isZoomed={!!activeDomain} uiStrings={uiStrings} />
         </div>
       </>
     );

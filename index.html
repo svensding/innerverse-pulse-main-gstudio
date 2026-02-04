@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -153,26 +154,6 @@
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
-    
-    <!-- Organic Ink Filters (Optimized for Performance) -->
-    <svg width="0" height="0" style="position:absolute">
-      <defs>
-        <!-- Balanced Flow: Reduced octaves for performance -->
-        <filter id="ink-flow" x="-50%" y="-50%" width="200%" height="200%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="2" result="noise" />
-          <feDisplacementMap in="SourceGraphic" in2="noise" scale="12" />
-        </filter>
-        
-        <!-- Watercolor Edge: Rough, bleeding edges -->
-        <filter id="watercolor-edge" x="-50%" y="-50%" width="200%" height="200%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="3" result="noise" />
-          <feDisplacementMap in="SourceGraphic" in2="noise" scale="8" result="distorted" />
-          <feGaussianBlur in="distorted" stdDeviation="2" result="blurred" />
-          <feComposite operator="in" in="distorted" in2="blurred" result="final" />
-        </filter>
-      </defs>
-    </svg>
-    
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>

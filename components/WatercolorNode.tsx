@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { usePerformance } from '../contexts/PerformanceContext';
 
 interface WatercolorNodeProps {
   id: string; 
@@ -33,6 +34,7 @@ const WatercolorNode: React.FC<WatercolorNodeProps> = ({
   onMouseEnter,
   onMouseLeave
 }) => {
+  const { settings } = usePerformance();
   
   // --- LENS 1: FORM (EGO) - SHAPE VIA CSS BORDER RADIUS ---
   // Performance Note: changing border-radius is much cheaper than SVG filters
@@ -40,7 +42,8 @@ const WatercolorNode: React.FC<WatercolorNodeProps> = ({
   
   if (roughness < -30) {
       // Amorphous / Blobby (Negative Ego)
-      // Creates an organic, non-uniform shape
+      // Only do organic shape if distortion setting is enabled, otherwise simple circle is faster?
+      // Actually CSS borderRadius is cheap. Keep it.
       borderRadius = '40% 60% 70% 30% / 40% 50% 60% 50%';
   } else if (roughness > 30) {
       // Rigid / Square (Positive Ego)
@@ -57,7 +60,7 @@ const WatercolorNode: React.FC<WatercolorNodeProps> = ({
   if (spread < 0) textureOpacity = mapValueToRange(spread, -100, 0, 0.2, 0.8);
   else textureOpacity = mapValueToRange(spread, 0, 100, 0.8, 0.95);
 
-  // Animation Speed: -100 (Slow) -> 100 (Fast)
+  // Animation Speed
   const animDurationSec = mapValueToRange(spread, -100, 100, 8, 1.5);
   
   // Gradient Logic
@@ -77,7 +80,6 @@ const WatercolorNode: React.FC<WatercolorNodeProps> = ({
   const backgroundStyle = `radial-gradient(circle at 40% 40%, ${stop1Color} ${stop1Pos}, ${color} 100%)`;
 
   // --- LENS 3: RESONANCE (SPIRIT) - GLOW & BLUR ---
-  // We use standard CSS blur instead of SVG displacement maps
   const spiritVal = (opacity - 0.6) / 0.4 * 200 - 100; 
   
   let boxShadow = `0 0 15px ${color}`; 
@@ -85,21 +87,27 @@ const WatercolorNode: React.FC<WatercolorNodeProps> = ({
   let scale = 1;
 
   if (spiritVal < -30) {
-      // LACK: Inwards Isolation (Hard Shell)
+      // LACK
       const strength = mapValueToRange(spiritVal, -30, -100, 2, 8);
       boxShadow = `inset 0 0 10px ${strength}px rgba(0,0,0,0.5)`; 
       scale = 0.9;
   } else if (spiritVal > 30) {
-      // EXCESS: Dissolving / Radiant (Wide Glow + Blur)
+      // EXCESS
       const glowSize = mapValueToRange(spiritVal, 30, 100, 20, 50);
-      const blurSize = mapValueToRange(spiritVal, 30, 100, 0, 6); // Subtle CSS Blur
-      boxShadow = `0 0 ${glowSize}px ${color}, 0 0 ${glowSize*0.5}px white`;
+      const blurSize = mapValueToRange(spiritVal, 30, 100, 0, 6); 
       
-      if (blurSize > 0) {
+      // Use settings.glow to modulate shadow spread
+      const glowMultiplier = settings.glow / 3; // 0 to 1
+      boxShadow = `0 0 ${glowSize * glowMultiplier}px ${color}, 0 0 ${glowSize * 0.5 * glowMultiplier}px white`;
+      
+      if (blurSize > 0 && settings.distortion) {
           cssFilter = `blur(${blurSize}px)`;
       }
-      // Reduce core opacity to let glow dominate
       textureOpacity *= 0.8;
+  } else {
+      // Normal Glow
+      const glowMultiplier = settings.glow / 3;
+      boxShadow = `0 0 ${15 * glowMultiplier}px ${color}`;
   }
 
   const visualBlob = isDefined ? (
@@ -115,24 +123,26 @@ const WatercolorNode: React.FC<WatercolorNodeProps> = ({
                 filter: cssFilter,
                 boxShadow: boxShadow,
                 transition: 'all 0.5s ease-in-out',
-                animation: `bio-pulse ${animDurationSec}s ease-in-out infinite`
+                animation: settings.animations ? `bio-pulse ${animDurationSec}s ease-in-out infinite` : 'none'
             }}
             className="pointer-events-none"
         />
         
         {/* Shine / Reflection Overlay */}
-        <div 
-             style={{ 
-                position: 'absolute',
-                inset: 0,
-                borderRadius: borderRadius,
-                background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%)',
-                mixBlendMode: 'overlay',
-                opacity: 0.6,
-                pointerEvents: 'none',
-                transition: 'border-radius 0.5s ease-in-out'
-            }}
-        />
+        {settings.distortion && (
+            <div 
+                style={{ 
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: borderRadius,
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 50%)',
+                    mixBlendMode: 'overlay',
+                    opacity: 0.6,
+                    pointerEvents: 'none',
+                    transition: 'border-radius 0.5s ease-in-out'
+                }}
+            />
+        )}
     </div>
   ) : (
      // Undefined State
@@ -146,7 +156,7 @@ const WatercolorNode: React.FC<WatercolorNodeProps> = ({
             boxShadow: `0 0 5px ${color}`,
             opacity: 0.5
         }}
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-500 animate-pulse"
+        className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-500 ${settings.animations ? 'animate-pulse' : ''}`}
     />
   );
 
@@ -163,7 +173,6 @@ const WatercolorNode: React.FC<WatercolorNodeProps> = ({
         <div style={{ width: size, height: size }} className="relative pointer-events-none">
             {renderVisuals && visualBlob}
         </div>
-        {/* Interaction Hit Area */}
         <div 
             style={{ width: size, height: size }}
             className="absolute inset-0 rounded-full cursor-pointer pointer-events-auto bg-transparent z-10"
