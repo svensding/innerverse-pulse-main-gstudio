@@ -33,10 +33,14 @@ import CloseIcon from './components/icons/CloseIcon';
 
 // --- HASH UTILS ---
 const decodeHash = (): { language: Language, values: (number | null)[] | null } | null => {
+  if (typeof window === 'undefined') return null;
+  
   const hash = window.location.hash.substring(1); // Remove #
   if (!hash) return null;
   
-  const [langCode, dataStr] = hash.split('/');
+  const parts = hash.split('/');
+  const langCode = parts[0];
+  const dataStr = parts[1];
   
   // Validate Language
   const validLang = ['en', 'es', 'nl'].includes(langCode) ? (langCode as Language) : 'en';
@@ -54,6 +58,15 @@ const decodeHash = (): { language: Language, values: (number | null)[] | null } 
 
 const encodeHash = (lang: Language, doms: Domain[]): string => {
     const values = doms.flatMap(d => d.nodes.flatMap(n => n.attributes.map(a => a.value === null ? '_' : a.value)));
+    
+    // Check if we have any actual data
+    const hasData = values.some(v => v !== '_');
+    
+    if (!hasData) {
+        // If no data, just return language. This keeps URL clean on initial load.
+        return lang;
+    }
+
     const dataStr = values.join('!');
     return `${lang}/${dataStr}`;
 };
@@ -126,9 +139,19 @@ const AppContent: React.FC = () => {
   // --- URL SYNC EFFECT ---
   // Whenever language or domains change, update the URL hash
   useEffect(() => {
-      const hash = encodeHash(language, domains);
-      // Use replaceState to avoid cluttering history stack with every slider move
-      window.history.replaceState(null, '', `#${hash}`);
+      try {
+          const hash = encodeHash(language, domains);
+          // Only replace if the hash is different to avoid redundant calls
+          // We use window.location.hash to get the current state
+          const currentHash = window.location.hash.substring(1);
+          if (currentHash !== hash) {
+              window.history.replaceState(null, '', `#${hash}`);
+          }
+      } catch (e) {
+          // In some environments (sandboxes, iframes), replacing state might fail.
+          // We catch this to prevent the app from crashing.
+          console.warn('Could not update URL hash:', e);
+      }
   }, [language, domains]);
 
   // --- DERIVED CONSTANTS ---
@@ -314,8 +337,12 @@ const AppContent: React.FC = () => {
       handleGoHome();
       setOnboardingStep(0);
       setShowInitialOnboarding(true);
-      // Clear hash
-      window.history.replaceState(null, '', window.location.pathname);
+      // Clear hash safely
+      try {
+        window.history.replaceState(null, '', window.location.pathname);
+      } catch (e) {
+        console.warn('Failed to clear hash:', e);
+      }
   };
   
   const handleOnboardingComplete = () => {
