@@ -106,19 +106,14 @@ const Onboarding: React.FC<OnboardingProps> = ({
   // --- Countdown Logic ---
   useEffect(() => {
       if (isPaused) {
-           // Start decrementing countdown (15s total = 100 to 0)
-           // 100 ticks of 150ms
            if (!countdownRef.current) {
                const tickInterval = 150; 
                const decrementPerTick = 100 / (15000 / tickInterval);
                
                countdownRef.current = window.setInterval(() => {
-                   // Use ref to check status inside interval closure without re-binding
                    if (!interactionOccurredRef.current) {
                        setCountdownProgress(prev => {
-                           if (prev <= 0) {
-                               return 0; // Will be handled by effect below
-                           }
+                           if (prev <= 0) return 0;
                            return prev - decrementPerTick;
                        });
                    } else {
@@ -175,7 +170,6 @@ const Onboarding: React.FC<OnboardingProps> = ({
     // Auto-advance logic for non-interactive steps
     let baseDuration = 6000;
     
-    // Extend duration specifically for Lens Demo steps (27, 28, 29) to allow animation cycles
     if (step >= 27 && step <= 29) {
         baseDuration = 14000; 
     }
@@ -204,13 +198,12 @@ const Onboarding: React.FC<OnboardingProps> = ({
   };
 
   const handleNext = () => {
-    setIsPlaying(false); // Stop auto-play if manually clicking next
+    setIsPlaying(false);
     setIsPaused(false);
     interactionOccurredRef.current = false;
     
     if (step < steps.length - 1) {
       setStep(s => s + 1);
-      // If next step is NOT interactive, resume playing
       const nextStep = steps[step+1];
       if (!nextStep.isInteractive) setIsPlaying(true);
     } else {
@@ -221,7 +214,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
   const handlePrev = () => {
     setIsPlaying(false);
     setIsPaused(false);
-    setCountdownProgress(100); // Reset timer
+    setCountdownProgress(100);
     if (step > 0) {
       setStep(s => s - 1);
     }
@@ -247,27 +240,23 @@ const Onboarding: React.FC<OnboardingProps> = ({
   const rawText = steps[step]?.text || "";
   const parts = rawText.split('<br/>');
 
-  // Text Shadow Logic for maximum contrast
   const heavyShadowStyle = {
       textShadow: '0 0 10px rgba(0,0,0,0.8), 0 0 20px rgba(0,0,0,0.5), 0 2px 2px rgba(0,0,0,1)'
   };
 
-  // Intelligent Hierarchy Logic:
-  // If a part contains <strong>, it is PRIMARY (big).
-  // If not, it is SECONDARY (small).
   const renderTextParts = () => {
       return (
-          // Reduced gap on mobile (gap-2) vs desktop (gap-4)
-          <div className={`flex flex-col gap-2 md:gap-4 text-center transition-opacity duration-500 ${fading ? 'opacity-0' : 'opacity-100'}`}>
+          <div 
+            className="flex flex-col gap-2 md:gap-4 text-center transition-opacity duration-500"
+            style={{ opacity: fading ? 0 : 1 }}
+          >
               {parts.map((part, index) => {
                   const isPrimary = part.includes('<strong>');
                   return (
                       <p 
                         key={index}
-                        // Reduced base font sizes for mobile to prevent awkward wrapping
-                        // lg -> 3xl for primary, sm -> xl for secondary
                         className={`font-light leading-relaxed drop-shadow-2xl ${isPrimary ? 'text-lg md:text-3xl text-white/95' : 'text-sm md:text-xl text-slate-200 italic'}`}
-                        style={heavyShadowStyle}
+                        style={{ ...heavyShadowStyle, color: 'white' }} // Explicit white color fallback
                         dangerouslySetInnerHTML={{ __html: part }} 
                       />
                   );
@@ -279,7 +268,6 @@ const Onboarding: React.FC<OnboardingProps> = ({
   const chapters = Array.from<number>(new Set(steps.map(s => s.chapter ?? 0))).sort((a, b) => a - b);
   const currentChapter = steps[step]?.chapter ?? 0;
 
-  // Chapter titles for tooltips
   const chapterTitles: Record<number, string> = {
       1: "Intro",
       2: "Energies",
@@ -290,17 +278,14 @@ const Onboarding: React.FC<OnboardingProps> = ({
   };
 
   return (
-    // Updated Padding: pb-40 to comfortably clear the bottom area
     <div 
-      className="fixed top-0 left-0 w-full z-50 pointer-events-none flex flex-col justify-end items-center pb-20 md:pb-40 px-6"
-      style={{ transform: 'translate3d(0,0,0)', height: 'var(--app-height, 100vh)' }}
+      className="fixed top-0 left-0 w-full z-[100] pointer-events-none flex flex-col justify-end items-center pb-20 md:pb-40 px-6 text-white"
+      style={{ transform: 'translate3d(0,0,0)', height: 'var(--app-height, 100vh)', color: 'white' }}
     >
       
-      {/* NO GRADIENT DIV HERE ANYMORE */}
-
       {/* START SCREEN */}
       {!hasStarted && step === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-auto">
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-auto bg-slate-950/80 backdrop-blur-sm z-[101]">
              <div className="w-full max-w-2xl px-6 flex flex-col items-center gap-12 animate-fade-in">
                 {renderTextParts()}
                 <div className="flex flex-col items-center gap-6">
@@ -308,12 +293,14 @@ const Onboarding: React.FC<OnboardingProps> = ({
                          <button 
                               onClick={handleBegin}
                               className={`px-10 py-4 rounded-full text-white/90 text-sm ${glassStyle}`}
+                              style={{ color: 'white' }}
                           >
                               {uiStrings.begin}
                           </button>
                           <button 
                               onClick={onComplete}
                               className="px-6 py-4 rounded-full text-white/40 hover:text-white transition-all text-xs"
+                              style={{ color: '#94a3b8' }}
                           >
                               {uiStrings.skip}
                           </button>
@@ -377,8 +364,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
                       </button>
                   </div>
              ) : (
-                 // Updated Controls Container with Fading Logic
-                 <div className="flex flex-col items-center gap-6 opacity-30 hover:opacity-100 transition-opacity duration-500">
+                 <div className="flex flex-col items-center gap-6 opacity-80 hover:opacity-100 transition-opacity duration-500">
                      {/* CHAPTER DOTS */}
                      <div className="flex gap-3 items-center">
                          {chapters.map((c) => {
@@ -402,7 +388,6 @@ const Onboarding: React.FC<OnboardingProps> = ({
                      {/* CONTROLS */}
                      <div className={`flex items-center justify-center gap-1 rounded-full p-1 relative ${glassStyle}`}>
                         
-                        {/* PAUSE OVERLAY / CONTINUE BUTTON */}
                         {isPaused && (
                             <div className="absolute inset-0 flex items-center justify-center z-20 bg-black/80 backdrop-blur-md rounded-full animate-fade-in">
                                 <div className="relative flex items-center justify-center w-full h-full">
@@ -439,7 +424,6 @@ const Onboarding: React.FC<OnboardingProps> = ({
                         
                         <div className="w-px h-4 bg-white/10 mx-1"></div>
 
-                        {/* Speed Toggle with Menu */}
                         <div className="relative">
                             {showSpeedMenu && (
                                 <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-12 py-1 rounded-lg flex flex-col items-center gap-1 ${glassStyle} animate-fade-in`}>
