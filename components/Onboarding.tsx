@@ -257,13 +257,16 @@ const Onboarding: React.FC<OnboardingProps> = ({
   // If not, it is SECONDARY (small).
   const renderTextParts = () => {
       return (
-          <div className={`flex flex-col gap-4 text-center transition-opacity duration-500 ${fading ? 'opacity-0' : 'opacity-100'}`}>
+          // Reduced gap on mobile (gap-2) vs desktop (gap-4)
+          <div className={`flex flex-col gap-2 md:gap-4 text-center transition-opacity duration-500 ${fading ? 'opacity-0' : 'opacity-100'}`}>
               {parts.map((part, index) => {
                   const isPrimary = part.includes('<strong>');
                   return (
                       <p 
                         key={index}
-                        className={`font-light leading-relaxed drop-shadow-2xl ${isPrimary ? 'text-xl md:text-3xl text-white/95' : 'text-base md:text-xl text-slate-200 italic'}`}
+                        // Reduced base font sizes for mobile to prevent awkward wrapping
+                        // lg -> 3xl for primary, sm -> xl for secondary
+                        className={`font-light leading-relaxed drop-shadow-2xl ${isPrimary ? 'text-lg md:text-3xl text-white/95' : 'text-sm md:text-xl text-slate-200 italic'}`}
                         style={heavyShadowStyle}
                         dangerouslySetInnerHTML={{ __html: part }} 
                       />

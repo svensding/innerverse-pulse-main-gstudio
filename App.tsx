@@ -1,636 +1,259 @@
 
-import React, { useState, useCallback, useEffect, useMemo, useRef, Suspense } from 'react';
-import { Domain, Node, Language, InquiryData } from './types';
-import { DOMAINS_DATA, ONBOARDING_STEPS, UI_STRINGS, ATTRIBUTE_DEFINITIONS } from './constants';
-import { DOMAINS_DATA_ES, ONBOARDING_STEPS_ES, UI_STRINGS_ES, ATTRIBUTE_DEFINITIONS_ES } from './constants_es';
-import { DOMAINS_DATA_NL, ONBOARDING_STEPS_NL, UI_STRINGS_NL, ATTRIBUTE_DEFINITIONS_NL } from './constants_nl';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Domain, Node, InquiryData, Language, LensData, PrimaryEnergyData, MandalaData, PersonalSpectrum } from './types';
+import { DOMAINS_DATA, UI_STRINGS, ONBOARDING_STEPS, ATTRIBUTE_DEFINITIONS } from './constants';
+import { DOMAINS_DATA_ES, UI_STRINGS_ES, ONBOARDING_STEPS_ES, ATTRIBUTE_DEFINITIONS_ES } from './constants_es';
+import { DOMAINS_DATA_NL, UI_STRINGS_NL, ONBOARDING_STEPS_NL, ATTRIBUTE_DEFINITIONS_NL } from './constants_nl';
 import { calculateMandalaData, calculateLensData, calculatePrimaryEnergyData, calculatePersonalSpectrum } from './utils/cosmosAnalysis';
+
+import Background from './components/Background';
 import SkyMap from './components/SkyMap';
 import StarDetailView from './components/StarDetailView';
+import SoulAtlasView from './components/SoulAtlasView';
 import Onboarding from './components/Onboarding';
 import Modal from './components/Modal';
 import IntroTextOverlay from './components/IntroTextOverlay';
-import Background from './components/Background';
+import ConstellationInsight from './components/ConstellationInsight';
+import InsightReadyIndicator from './components/InsightReadyIndicator';
+
 import PulseLogo from './components/icons/PulseLogo';
-import EnterFullscreenIcon from './components/icons/EnterFullscreenIcon';
-import ExitFullscreenIcon from './components/icons/ExitFullscreenIcon';
+import BackIcon from './components/icons/BackIcon';
 import MenuIcon from './components/icons/MenuIcon';
 import ShareIcon from './components/icons/ShareIcon';
 import SaveIcon from './components/icons/SaveIcon';
 import LinkIcon from './components/icons/LinkIcon';
 import RestartIcon from './components/icons/RestartIcon';
-import ZoomInIcon from './components/icons/ZoomInIcon';
-import ZoomOutIcon from './components/icons/ZoomOutIcon';
-import BackIcon from './components/icons/BackIcon';
+import CloseIcon from './components/icons/CloseIcon';
 
-// Optimization: Lazy load the heavy Atlas view so it isn't in main bundle
-const SoulAtlasView = React.lazy(() => import('./components/SoulAtlasView'));
-
-const serializeDomains = (domainsData: Domain[]): string => {
-  return domainsData
-    .map(d =>
-      d.nodes
-        .map(n => n.attributes.map(a => (a.value === null ? '_' : a.value)).join(','))
-        .join(';')
-    )
-    .join('|');
-};
-
-const deserializeDomains = (hash: string, baseData: Domain[]): Domain[] | null => {
-  if (!hash) return null;
-  try {
-    // Decode the hash to handle browser-encoded characters (like %7C for |)
-    const rawHash = window.location.hash.substring(1);
-    const hash = decodeURIComponent(rawHash);
-    
-    const newDomains: Domain[] = JSON.parse(JSON.stringify(baseData));
-    const domainParts = hash.split('|');
-
-    if (domainParts.length !== newDomains.length) return null;
-
-    for (let i = 0; i < domainParts.length; i++) {
-      const nodeParts = domainParts[i].split(';');
-      if (nodeParts.length !== newDomains[i].nodes.length) return null;
-
-      for (let j = 0; j < nodeParts.length; j++) {
-        const attrParts = nodeParts[j].split(',');
-        if (attrParts.length !== newDomains[i].nodes[j].attributes.length) return null;
-
-        for (let k = 0; k < attrParts.length; k++) {
-          const value = attrParts[k];
-          if (value === '_') {
-            newDomains[i].nodes[j].attributes[k].value = null;
-          } else {
-            const numValue = parseInt(value, 10);
-            if (!isNaN(numValue)) {
-              newDomains[i].nodes[j].attributes[k].value = numValue;
-            } else {
-              newDomains[i].nodes[j].attributes[k].value = null; 
-            }
-          }
-        }
-      }
-    }
-    return newDomains;
-  } catch (e) {
-    console.error('[State Deserialization] Failed:', e);
-    return null;
-  }
-};
+const glassPanelStyle = "bg-black/20 backdrop-blur-xl border border-white/10 shadow-xl";
 
 const App: React.FC = () => {
+  // --- STATE ---
   const [language, setLanguage] = useState<Language>('en');
+  const [domains, setDomains] = useState<Domain[]>(DOMAINS_DATA);
+  const [activeDomain, setActiveDomain] = useState<Domain | null>(null);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const [showInitialOnboarding, setShowInitialOnboarding] = useState(true);
+  const [isAtlasViewActive, setIsAtlasViewActive] = useState(false);
+  const [isWakeLockActive, setIsWakeLockActive] = useState(false);
   
-  // Computed constants based on language
+  // UI State
+  const [showMenu, setShowMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [introText, setIntroText] = useState<string | null>(null);
+  
+  // Data / Persistence
+  const [isReadOnly, setIsReadOnly] = useState(false);
+  const [viewingName, setViewingName] = useState<string | null>(null);
+  const [inquiryData, setInquiryData] = useState<InquiryData | null>(null);
+  
+  // Constellation Insight State
+  const [showInsight, setShowInsight] = useState(false);
+  const [completedDomains, setCompletedDomains] = useState<Record<string, boolean>>({});
+
+  const skyMapRef = useRef<{ zoomIn: () => void; zoomOut: () => void; reset: () => void }>(null);
+  const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
+
+  // --- DERIVED CONSTANTS ---
   const currentConstants = useMemo(() => {
-      if (language === 'es') {
-          return { domains: DOMAINS_DATA_ES, steps: ONBOARDING_STEPS_ES, ui: UI_STRINGS_ES, attributes: ATTRIBUTE_DEFINITIONS_ES };
-      } else if (language === 'nl') {
-          return { domains: DOMAINS_DATA_NL, steps: ONBOARDING_STEPS_NL, ui: UI_STRINGS_NL, attributes: ATTRIBUTE_DEFINITIONS_NL };
-      } else {
-          return { domains: DOMAINS_DATA, steps: ONBOARDING_STEPS, ui: UI_STRINGS, attributes: ATTRIBUTE_DEFINITIONS };
+      switch (language) {
+          case 'es': return { domains: DOMAINS_DATA_ES, ui: UI_STRINGS_ES, steps: ONBOARDING_STEPS_ES, definitions: ATTRIBUTE_DEFINITIONS_ES };
+          case 'nl': return { domains: DOMAINS_DATA_NL, ui: UI_STRINGS_NL, steps: ONBOARDING_STEPS_NL, definitions: ATTRIBUTE_DEFINITIONS_NL };
+          default: return { domains: DOMAINS_DATA, ui: UI_STRINGS, steps: ONBOARDING_STEPS, definitions: ATTRIBUTE_DEFINITIONS };
       }
   }, [language]);
 
-  // Initial State Logic
-  const getInitialState = () => {
-    try {
-      // Decode the hash to handle browser-encoded characters (like %7C for |)
-      const rawHash = window.location.hash.substring(1);
-      const hash = decodeURIComponent(rawHash);
-      
-      const searchParams = new URLSearchParams(window.location.search);
-      const sharedName = searchParams.get('name');
-      const langParam = searchParams.get('lang');
-      
-      // Determine language (Default EN)
-      let initialLang: Language = 'en';
-      if (langParam === 'es') initialLang = 'es';
-      if (langParam === 'nl') initialLang = 'nl';
-      
-      // Select base data based on initial language
-      let baseData = DOMAINS_DATA;
-      if (initialLang === 'es') baseData = DOMAINS_DATA_ES;
-      else if (initialLang === 'nl') baseData = DOMAINS_DATA_NL;
-
-      const defaultState = { initialDomains: baseData, initialCompleted: {}, isReadOnly: false, viewingName: null, lang: initialLang };
-
-      if (!hash) return defaultState;
-      const deserialized = deserializeDomains(hash, baseData);
-
-      if (deserialized) {
-        const initialCompleted: Record<string, boolean> = {};
-        deserialized.forEach(d => {
-          const isComplete = d.nodes.every(n => n.attributes.every(a => a.value !== null));
-          if (isComplete) initialCompleted[d.id] = true;
-        });
-        return { initialDomains: deserialized, initialCompleted, isReadOnly: !!sharedName, viewingName: sharedName, lang: initialLang };
-      }
-      return defaultState;
-    } catch (e) {
-      console.error("[State Init] Critical error", e);
-      return { initialDomains: DOMAINS_DATA, initialCompleted: {}, isReadOnly: false, viewingName: null, lang: 'en' as Language };
-    }
-  };
-
-  const [initialState] = useState(() => getInitialState());
-  
-  // Sync initial language state
+  // Merge current values into localized domains when language changes
   useEffect(() => {
-      if (initialState.lang !== language) setLanguage(initialState.lang);
-  }, []); // Run once
-
-  const [domains, setDomains] = useState<Domain[]>(initialState.initialDomains);
-  const [activeDomain, setActiveDomain] = useState<Domain | null>(null);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [completedDomains, setCompletedDomains] = useState<Record<string, boolean>>(initialState.initialCompleted);
-  const [awakenedNodeId, setAwakenedNodeId] = useState<string | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isAtlasViewActive, setIsAtlasViewActive] = useState(false);
-  
-  const [isReadOnly, setIsReadOnly] = useState(initialState.isReadOnly);
-  const [viewingName, setViewingName] = useState<string | null>(initialState.viewingName);
-  const [showMenu, setShowMenu] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [shareName, setShareName] = useState('');
-
-  // Lifted state for the Reading, so it persists across view toggles
-  const [inquiryData, setInquiryData] = useState<InquiryData | null>(null);
-
-  const skyMapRef = useRef<{ zoomIn: () => void; zoomOut: () => void; reset: () => void }>(null);
-
-  const definedNodesCount = useMemo(() => {
-    return domains.flatMap(d => d.nodes).filter(n => n.attributes.every(a => a.value !== null)).length;
-  }, [domains]);
-
-  const [showInitialOnboarding, setShowInitialOnboarding] = useState(definedNodesCount < 24 && !initialState.isReadOnly && !window.location.hash);
-  const [onboardingStep, setOnboardingStep] = useState(0);
-  const [firstCompletionDomain, setFirstCompletionDomain] = useState<Domain | null>(null);
-  const [hasSeenDomainGuide, setHasSeenDomainGuide] = useState(false);
-  const [domainIntro, setDomainIntro] = useState<{ texts: string[], step: number } | null>(null);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  
-  // --- WAKE LOCK LOGIC ---
-  const [shouldKeepAwake, setShouldKeepAwake] = useState(false);
-  const wakeLockRef = useRef<any>(null);
-
-  const requestWakeLock = async () => {
-    if ('wakeLock' in navigator) {
-      try {
-        // @ts-ignore
-        wakeLockRef.current = await navigator.wakeLock.request('screen');
-        console.log('Screen Wake Lock acquired');
-      } catch (err) {
-        console.error(`Wake Lock Error: ${err}`);
-      }
-    }
-  };
-
-  const releaseWakeLock = async () => {
-      if(wakeLockRef.current) {
-          try {
-              await wakeLockRef.current.release();
-              wakeLockRef.current = null;
-              console.log('Screen Wake Lock released');
-          } catch(err) { console.error(err); }
-      }
-  };
-
-  // Re-acquire if visibility changes and we want it kept awake
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (shouldKeepAwake && document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [shouldKeepAwake]);
-
-  const toggleWakeLock = async () => {
-      if (!shouldKeepAwake) {
-          setShouldKeepAwake(true);
-          await requestWakeLock();
-      } else {
-          setShouldKeepAwake(false);
-          await releaseWakeLock();
-      }
-  };
-
-  // --- VIEWPORT HEIGHT FIX FOR MOBILE ---
-  useEffect(() => {
-    const setAppHeight = () => {
-      const doc = document.documentElement;
-      doc.style.setProperty('--app-height', `${window.innerHeight}px`);
-    };
-    
-    setAppHeight();
-    window.addEventListener('resize', setAppHeight);
-    
-    return () => window.removeEventListener('resize', setAppHeight);
-  }, []);
-
-  // --- LANGUAGE SWITCHING LOGIC ---
-  const handleLanguageChange = (newLang: Language) => {
-      setLanguage(newLang);
-      
-      let targetBaseData;
-      if (newLang === 'es') targetBaseData = DOMAINS_DATA_ES;
-      else if (newLang === 'nl') targetBaseData = DOMAINS_DATA_NL;
-      else targetBaseData = DOMAINS_DATA;
-      
-      // Migrate current values to new language structure
-      setDomains(prevDomains => {
-          return targetBaseData.map((d, dIdx) => ({
-              ...d,
-              nodes: d.nodes.map((n, nIdx) => ({
-                  ...n,
-                  // Copy values from previous state
-                  attributes: n.attributes.map((a, aIdx) => ({
-                      ...a,
-                      value: prevDomains[dIdx]?.nodes[nIdx]?.attributes[aIdx]?.value ?? null
-                  }))
-              }))
-          }));
-      });
-      
-      // Migrate Active Domain
-      if (activeDomain) {
-          const newActive = targetBaseData.find(d => d.id === activeDomain.id);
-          if (newActive) setActiveDomain(newActive);
-      }
-      // Migrate Selected Node
-      if (selectedNode) {
-           const dId = selectedNode.id.split('-')[0];
-           // Find matching node in target data by ID (ID is consistent across languages)
-           const newDomain = targetBaseData.find(d => d.id === dId);
-           const newNode = newDomain?.nodes.find(n => n.id === selectedNode.id);
-           
-           if (newNode) {
-               // Must attach current values
-               const currentValues = selectedNode.attributes.map(a => a.value);
-               const updatedNode = {
-                   ...newNode,
-                   attributes: newNode.attributes.map((a, i) => ({ ...a, value: currentValues[i] }))
-               };
-               setSelectedNode(updatedNode);
-           }
-      }
-  };
-
-  const { mandalaData, lensData, primaryEnergyData, personalSpectrum } = useMemo(() => {
-    const mandalaData = calculateMandalaData(domains);
-    const lensData = calculateLensData(domains);
-    const primaryEnergyData = calculatePrimaryEnergyData(domains);
-    const personalSpectrum = calculatePersonalSpectrum(domains);
-    return { mandalaData, lensData, primaryEnergyData, personalSpectrum };
-  }, [domains]);
-
-  useEffect(() => {
-    const hasData = domains.some(d => d.nodes.some(n => n.attributes.some(a => a.value !== null)));
-    try {
-      const protocol = window.location.protocol;
-      const isRestrictedEnv = protocol === 'blob:' || protocol === 'file:';
-
-      if (hasData) {
-        const serializedData = serializeDomains(domains);
-        const newHash = '#' + serializedData;
-        
-        // Also update URL param for lang
-        let url;
-        try {
-            url = new URL(window.location.href);
-        } catch(e) {
-            // If URL parsing fails, just update hash and return
-            if (window.location.hash !== newHash) {
-                window.location.hash = newHash;
-            }
-            return;
-        }
-
-        if (language === 'es') url.searchParams.set('lang', 'es');
-        else if (language === 'nl') url.searchParams.set('lang', 'nl');
-        else url.searchParams.delete('lang');
-        
-        // We decode current hash to compare properly (avoid %7C vs | mismatches)
-        const currentHashDecoded = decodeURIComponent(window.location.hash);
-        
-        const hashChanged = currentHashDecoded !== newHash;
-        const searchChanged = url.search !== window.location.search;
-
-        if (hashChanged || searchChanged) {
-             if (isRestrictedEnv) {
-                 // In restricted environments, we prioritize the hash (data state) and skip replaceState
-                 if (hashChanged) {
-                     window.location.hash = newHash;
-                 }
-             } else {
-                 const newUrl = url.pathname + url.search + newHash;
-                 window.history.replaceState(null, '', newUrl);
-             }
-        }
-      } else {
-        const url = new URL(window.location.href);
-        if (language === 'es') url.searchParams.set('lang', 'es');
-        else if (language === 'nl') url.searchParams.set('lang', 'nl');
-        else url.searchParams.delete('lang');
-        
-        // If we want to clear the hash when no data
-        if (window.location.hash || url.search !== window.location.search) {
-             if (isRestrictedEnv) {
-                 if (window.location.hash) window.location.hash = '';
-             } else {
-                 window.history.replaceState(null, '', url.pathname + url.search);
-             }
-        }
-      }
-    } catch (e) { 
-        // Ignore errors in constrained environments
-        if (window.location.protocol !== 'blob:' && window.location.protocol !== 'file:') {
-            console.warn("State Sync Error", e); 
-        }
-    }
-  }, [domains, isReadOnly, language]);
-  
-  useEffect(() => {
-    if (!domainIntro) return;
-    const timer = setTimeout(() => {
-        if (domainIntro.step < domainIntro.texts.length - 1) {
-            setDomainIntro(q => q ? { ...q, step: q.step + 1 } : null);
-        } else {
-            setDomainIntro(null);
-        }
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [domainIntro]);
-
-  useEffect(() => {
-    const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
-
-  const handleOnboardingComplete = () => {
-    setShowInitialOnboarding(false);
-    setOnboardingStep(99); // Ensure we jump to "Complete" state
-  };
-  
-  const handleBack = useCallback(() => {
-      if (selectedNode) setSelectedNode(null);
-      else if (activeDomain) setActiveDomain(null);
-      else if (isAtlasViewActive) setIsAtlasViewActive(false);
-  }, [selectedNode, activeDomain, isAtlasViewActive]);
-
-  const handleGoHome = useCallback(() => {
-    setActiveDomain(null);
-    setSelectedNode(null);
-    setIsAtlasViewActive(false);
-  }, []);
-
-  const handleSelectDomain = useCallback((domain: Domain) => {
-    const hasDefinedNodes = domain.nodes.some(n => n.attributes.some(a => a.value !== null));
-    if (!hasSeenDomainGuide && !showInitialOnboarding && !hasDefinedNodes && !isReadOnly) {
-        // Need to localize this dynamic guide too
-        let t1 = `You've entered the <strong>${domain.name}</strong> realm, a space of <strong>${domain.subName}</strong>.`;
-        let t2 = `Select a node to begin defining its flow.`;
-        
-        if (language === 'es') {
-            t1 = `Has entrado en el reino de <strong>${domain.name}</strong>, un espacio de <strong>${domain.subName}</strong>.`;
-            t2 = `Selecciona un nodo para comenzar a definir su flujo.`;
-        } else if (language === 'nl') {
-            t1 = `Je hebt het domein van <strong>${domain.name}</strong> betreden, een ruimte van <strong>${domain.subName}</strong>.`;
-            t2 = `Selecteer een knooppunt om de stroom te definiëren.`;
-        }
-        
-        setDomainIntro({
-            texts: [t1, t2],
-            step: 0
-        });
-        setHasSeenDomainGuide(true);
-    }
-    setActiveDomain(domain);
-    setSelectedNode(null);
-  }, [hasSeenDomainGuide, showInitialOnboarding, isReadOnly, language]);
-
-  const handleSelectNode = useCallback((node: Node) => {
-    setSelectedNode(node);
-  }, []);
-  
-  const handleCloseDetailPanel = useCallback(() => {
-    setSelectedNode(null);
-  }, []);
-
-  const handleAttributeChange = useCallback((nodeId: string, attributeId: string, value: number) => {
-    if (isReadOnly) return;
-    
-    setDomains(prevDomains => prevDomains.map(d => {
-        if (!d.nodes.some(n => n.id === nodeId)) return d;
-        return {
-            ...d,
-            nodes: d.nodes.map(n => {
-                if (n.id === nodeId) {
-                    return { ...n, attributes: n.attributes.map(a => a.id === attributeId ? { ...a, value } : a) };
+    setDomains(prevDomains => {
+        const newDomains = JSON.parse(JSON.stringify(currentConstants.domains));
+        // Preserve values
+        prevDomains.forEach((d, dIdx) => {
+            d.nodes.forEach((n, nIdx) => {
+                const targetNode = newDomains[dIdx]?.nodes[nIdx];
+                if (targetNode) {
+                    targetNode.attributes = n.attributes.map((a, aIdx) => ({
+                        ...targetNode.attributes[aIdx],
+                        value: a.value
+                    }));
                 }
-                return n;
-            }),
-        };
-    }));
-    
-    if (selectedNode && selectedNode.id === nodeId) {
-        setSelectedNode(prev => prev ? { ...prev, attributes: prev.attributes.map(a => a.id === attributeId ? { ...a, value } : a) } : null);
-    }
-  }, [selectedNode, isReadOnly]);
-  
-  const allNodes = useMemo(() => domains.flatMap(d => d.nodes), [domains]);
-  const currentNodeIndex = selectedNode ? allNodes.findIndex(n => n.id === selectedNode.id) : -1;
-  const isMapComplete = definedNodesCount === 24;
-  const isLastGlobalNode = currentNodeIndex === allNodes.length - 1;
-  
-  const handleRequestReset = useCallback(() => {
-    setShowResetConfirm(true);
-    setShowMenu(false);
-  }, []);
-
-  const handleConfirmReset = useCallback(() => {
-    setDomains(JSON.parse(JSON.stringify(currentConstants.domains)));
-    setCompletedDomains({});
-    setActiveDomain(null);
-    setSelectedNode(null);
-    setIsAtlasViewActive(false);
-    setShowInitialOnboarding(true);
-    setOnboardingStep(0);
-    setShowResetConfirm(false);
-    setIsReadOnly(false);
-    setViewingName(null);
-    setInquiryData(null); // Clear reading
-    window.location.hash = '';
-    const url = new URL(window.location.href);
-    window.history.replaceState({}, document.title, url.pathname + url.search);
+            });
+        });
+        return newDomains;
+    });
   }, [currentConstants]);
 
-  const handleNavigateNode = (direction: 'next' | 'prev') => {
-      if (currentNodeIndex === -1) return;
-      
-      // If Map is complete, the "Next" button behaves as "Finish" (Check)
-      if (direction === 'next' && isMapComplete) {
-          handleCloseDetailPanel();
-          handleGoHome(); 
-          return;
-      }
+  // --- COMPUTED DATA ---
+  const mandalaData: MandalaData = useMemo(() => calculateMandalaData(domains), [domains]);
+  const lensData: LensData = useMemo(() => calculateLensData(domains), [domains]);
+  const primaryEnergyData: PrimaryEnergyData = useMemo(() => calculatePrimaryEnergyData(domains), [domains]);
+  const personalSpectrum: PersonalSpectrum = useMemo(() => calculatePersonalSpectrum(domains), [domains]);
+  
+  const definedNodesCount = useMemo(() => 
+    domains.flatMap(d => d.nodes).filter(n => n.attributes.some(a => a.value !== null)).length, 
+  [domains]);
 
-      let nextIndex;
-      if (direction === 'next') {
-          nextIndex = (currentNodeIndex + 1) % allNodes.length;
-      } else {
-          nextIndex = (currentNodeIndex - 1 + allNodes.length) % allNodes.length;
-      }
+  const showDetailPanel = !!selectedNode;
+  const isMapComplete = definedNodesCount === 24;
 
-      const nextNode = allNodes[nextIndex];
-      const nextNodeDomain = domains.find(d => d.nodes.some(n => n.id === nextNode.id));
-      if (nextNodeDomain) {
-          if (activeDomain?.id !== nextNodeDomain.id) setActiveDomain(nextNodeDomain);
-          setSelectedNode(nextNode);
+  // --- HANDLERS ---
+  
+  const toggleWakeLock = async () => {
+    if (!('wakeLock' in navigator)) return;
+    try {
+        if (!isWakeLockActive) {
+            wakeLockSentinel.current = await navigator.wakeLock.request('screen');
+            setIsWakeLockActive(true);
+        } else {
+            if (wakeLockSentinel.current) await wakeLockSentinel.current.release();
+            wakeLockSentinel.current = null;
+            setIsWakeLockActive(false);
+        }
+    } catch (err) {
+        console.error('Wake Lock Error:', err);
+    }
+  };
+
+  const handleLanguageChange = (lang: Language) => {
+      setLanguage(lang);
+      setShowMenu(false);
+  };
+
+  const handleGoHome = () => {
+      setActiveDomain(null);
+      setSelectedNode(null);
+      setIsAtlasViewActive(false);
+      setShowInsight(false);
+      skyMapRef.current?.reset();
+  };
+
+  const handleBack = () => {
+      if (selectedNode) {
+          setSelectedNode(null);
+          if (activeDomain) {
+              // Zoom back to active domain
+          }
+      } else if (activeDomain) {
+          setActiveDomain(null);
+          skyMapRef.current?.reset();
       }
   };
 
-  const showDetailPanel = !!selectedNode;
-  const handleEnterAtlasView = useCallback(() => { if (definedNodesCount > 0) { setIsAtlasViewActive(true); setActiveDomain(null); setSelectedNode(null); } }, [definedNodesCount]);
-  
-  // Disable zoom buttons during onboarding, EXCEPT at step 24 (Expressions pause)
-  const canZoom = !showInitialOnboarding || onboardingStep === 24;
-  const handleZoomIn = () => { if(canZoom) skyMapRef.current?.zoomIn(); };
-  const handleZoomOut = () => { if(canZoom) skyMapRef.current?.zoomOut(); };
+  const handleSelectDomain = (domain: Domain) => {
+      setActiveDomain(domain);
+      // Intro text for domain
+      setIntroText(`<span class="text-amber-300 font-bold">${domain.name}</span><br/><span class="text-sm text-slate-300">${currentConstants.ui.domainAwakens}</span>`);
+  };
 
-  const handleToggleFullscreen = useCallback(async () => { 
-      if (!document.fullscreenElement) { 
-          await document.documentElement.requestFullscreen().catch(() => {});
-          if (!shouldKeepAwake) {
-              setShouldKeepAwake(true);
-              requestWakeLock();
+  const handleSelectNode = (node: Node) => {
+      setSelectedNode(node);
+      setIntroText(null); // Clear overlays when entering detail
+  };
+
+  const handleAttributeChange = (nodeId: string, attrId: string, value: number) => {
+      setDomains(prev => {
+          const next = [...prev];
+          for (const d of next) {
+              const n = d.nodes.find(node => node.id === nodeId);
+              if (n) {
+                  const a = n.attributes.find(attr => attr.id === attrId);
+                  if (a) a.value = value;
+                  break;
+              }
           }
-      } else { 
-          if (document.exitFullscreen) document.exitFullscreen(); 
-      } 
-  }, [shouldKeepAwake]);
+          return next;
+      });
+  };
 
-  const handleShare = () => { if (shareName.trim()) { 
-      const langParam = language === 'es' ? '&lang=es' : (language === 'nl' ? '&lang=nl' : '');
-      const url = `${window.location.origin}${window.location.pathname}?name=${encodeURIComponent(shareName)}${langParam}${window.location.hash}`; 
-      navigator.clipboard.writeText(url).then(() => { alert(`${currentConstants.ui.linkCopied}`); setShowShareModal(false); setShowMenu(false); }); 
-  } };
-  const handleSave = () => { const url = window.location.href; navigator.clipboard.writeText(url).then(() => { alert(currentConstants.ui.linkSaved); setShowMenu(false); }); };
+  // --- NAVIGATION IN DETAIL VIEW ---
+  const currentDomainNodes = activeDomain ? domains.find(d => d.id === activeDomain.id)?.nodes || [] : [];
+  const currentNodeIndex = selectedNode ? currentDomainNodes.findIndex(n => n.id === selectedNode.id) : -1;
+  const hasNext = currentNodeIndex >= 0 && currentNodeIndex < currentDomainNodes.length - 1;
+  const hasPrev = currentNodeIndex > 0;
+
+  const handleSelectNext = () => {
+      if (hasNext) handleSelectNode(currentDomainNodes[currentNodeIndex + 1]);
+      else if (isMapComplete) handleGoHome(); // Easy exit when complete
+  };
   
-  // Clean glass style without blur for better performance
-  const glassPanelStyle = "bg-black/40 border border-white/10 shadow-2xl transition-all duration-300";
+  const handleSelectPrev = () => {
+      if (hasPrev) handleSelectNode(currentDomainNodes[currentNodeIndex - 1]);
+  };
+
+  // --- PERSISTENCE / SAVE ---
+  const handleSave = () => {
+      // Mock implementation for demo
+      const data = JSON.stringify(domains);
+      const blob = new Blob([data], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'innerverse-save.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setShowMenu(false);
+  };
+
+  const handleRequestReset = () => {
+      setShowMenu(false);
+      setShowResetModal(true);
+  };
+
+  const handleConfirmReset = () => {
+      setDomains(JSON.parse(JSON.stringify(currentConstants.domains))); // Deep reset
+      setShowResetModal(false);
+      handleGoHome();
+      setOnboardingStep(0);
+      setShowInitialOnboarding(true);
+  };
+  
+  const handleOnboardingComplete = () => {
+      setShowInitialOnboarding(false);
+      setOnboardingStep(99); // Mark complete
+  };
+
+  const handleDomainCompleteCheck = (domain: Domain) => {
+     // Check if all nodes in domain are defined
+     const allDefined = domain.nodes.every(n => n.attributes.every(a => a.value !== null));
+     if (allDefined && !completedDomains[domain.id]) {
+         setCompletedDomains(prev => ({...prev, [domain.id]: true}));
+     }
+  };
+
+  // Auto-check for completions
+  useEffect(() => {
+      domains.forEach(d => handleDomainCompleteCheck(d));
+  }, [domains]);
 
   return (
-    <main 
-      data-name="main-app-container" 
-      className="fixed top-0 left-0 w-full text-slate-200 font-light overflow-hidden bg-slate-950"
-      style={{ height: 'var(--app-height, 100vh)' }}
-    >
+    <div className="relative w-full h-full overflow-hidden bg-slate-950 text-white selection:bg-amber-500/30">
       
-      {/* 1. Global Background Atmosphere */}
-      <Background onboardingStep={showInitialOnboarding ? onboardingStep : 99} />
-      
-      {/* 2. Onboarding UI Layer */}
-      {showInitialOnboarding && (
-          <Onboarding 
-            onComplete={handleOnboardingComplete} 
-            onStepChange={setOnboardingStep} 
-            steps={currentConstants.steps} 
-            uiStrings={currentConstants.ui} 
-            language={language} 
-            onLanguageChange={handleLanguageChange}
-            toggleWakeLock={toggleWakeLock}
-            isWakeLockActive={shouldKeepAwake}
-          />
-      )}
-      <IntroTextOverlay text={domainIntro ? domainIntro.texts[domainIntro.step] : null} />
-      
-      {/* 3. Pulse Reading View (Atlas) - LAZY LOADED WITH SUSPENSE */}
-      {isAtlasViewActive && (
-        <Suspense fallback={<div className="fixed inset-0 z-[60] bg-slate-950/90 flex items-center justify-center text-amber-300 animate-pulse font-light tracking-widest text-sm">Opening Reading...</div>}>
-            <SoulAtlasView 
-                domains={domains} 
-                mandalaData={mandalaData} 
-                lensData={lensData} 
-                primaryEnergyData={primaryEnergyData} 
-                personalSpectrum={personalSpectrum} 
-                onClose={handleGoHome} 
-                uiStrings={currentConstants.ui} 
-                attributeDefinitions={currentConstants.attributes} 
-                language={language} 
-                inquiryData={inquiryData}
-                setInquiryData={setInquiryData}
-            />
-        </Suspense>
-      )}
+      {/* 1. BACKGROUND LAYER */}
+      <Background onboardingStep={onboardingStep} />
 
-      {/* Share Modal */}
-      <Modal show={showShareModal} title={currentConstants.ui.shareInnerverse} onClose={() => setShowShareModal(false)}>
-          <div className="text-left space-y-4">
-              <p className="text-slate-300">
-                  {language === 'es' ? "Ingresa tu nombre para personalizar el enlace." : 
-                   language === 'nl' ? "Vul je naam in om de link te personaliseren." :
-                   "Enter your name to personalize the link."}
-              </p>
-              <input type="text" placeholder={language === 'es' ? "Tu Nombre" : language === 'nl' ? "Jouw Naam" : "Your Name"} value={shareName} onChange={e => setShareName(e.target.value)} className="w-full bg-black/30 border border-white/20 rounded p-2 text-white outline-none focus:border-amber-400" />
-              <button onClick={handleShare} className="w-full py-2 bg-amber-600/20 hover:bg-amber-600/40 text-amber-200 border border-amber-500/30 rounded tracking-widest text-xs transition-colors">{currentConstants.ui.copyLink}</button>
-          </div>
-      </Modal>
+      {/* 2. MAIN MAP VISUALIZATION */}
+      <SkyMap 
+          ref={skyMapRef}
+          domains={domains}
+          activeDomain={activeDomain}
+          selectedNode={selectedNode}
+          completedDomains={completedDomains}
+          onboardingStep={onboardingStep}
+          awakenedNodeId={selectedNode?.id || null}
+          lensData={lensData}
+          primaryEnergyData={primaryEnergyData}
+          definedNodesCount={definedNodesCount}
+          onSelectDomain={handleSelectDomain}
+          onSelectNode={handleSelectNode}
+          onEnterAtlas={() => setIsAtlasViewActive(true)}
+          onDeselect={handleBack}
+          uiStrings={currentConstants.ui}
+      />
 
-      <Modal show={!!firstCompletionDomain} title={currentConstants.ui.domainAwakens} onClose={() => setFirstCompletionDomain(null)}>
-        <p className="text-slate-300 mb-6">
-            {language === 'es' ? `Has despertado el dominio de **${firstCompletionDomain?.name}**!` : 
-             language === 'nl' ? `Je hebt het domein van **${firstCompletionDomain?.name}** ontwaakt!` :
-             `You have awakened the **${firstCompletionDomain?.name}** domain!`}
-        </p>
-        <button onClick={() => setFirstCompletionDomain(null)} className="px-6 py-2 bg-white/10 border border-white/20 rounded-full text-white/80 text-sm hover:text-white">{currentConstants.ui.continue}</button>
-      </Modal>
-
-      <Modal show={showResetConfirm} title={currentConstants.ui.restartTitle} onClose={() => setShowResetConfirm(false)}>
-        <p className="text-slate-300 mb-6">{currentConstants.ui.restartConfirm}</p>
-        <div className="flex justify-center gap-4">
-            <button onClick={() => setShowResetConfirm(false)} className="px-6 py-2 bg-white/5 border border-white/10 rounded-full text-white/60 text-xs hover:text-white">{currentConstants.ui.cancel}</button>
-            <button onClick={handleConfirmReset} className="px-6 py-2 bg-orange-500/20 border border-orange-500/40 rounded-full text-orange-200 text-xs hover:text-white">{currentConstants.ui.confirm}</button>
-        </div>
-      </Modal>
-
-      <div data-name="app-layout-grid" className={`relative z-10 w-full h-full flex flex-col md:flex-row`}>
-        <div data-name="map-column" className={`relative w-full transition-all duration-1000 ease-in-out ${showDetailPanel ? 'h-1/3 md:h-full md:w-2/3 cursor-pointer' : 'h-full'}`} onClick={showDetailPanel ? handleCloseDetailPanel : undefined}>
-          <SkyMap ref={skyMapRef} domains={domains} activeDomain={activeDomain} selectedNode={selectedNode} completedDomains={completedDomains} awakenedNodeId={awakenedNodeId} onSelectDomain={handleSelectDomain} onSelectNode={handleSelectNode} onboardingStep={showInitialOnboarding ? onboardingStep : 99} lensData={lensData} primaryEnergyData={primaryEnergyData} onEnterAtlas={handleEnterAtlasView} onDeselect={handleBack} definedNodesCount={definedNodesCount} uiStrings={currentConstants.ui} />
-        </div>
-        
-        {/* Detail Panel - Clean Glass Style */}
-        <aside 
-            data-name="detail-panel" 
-            className={`
-                border-t md:border-t-0 md:border-l border-white/10 
-                transition-all duration-1000 ease-in-out 
-                ${showDetailPanel ? 'h-2/3 md:h-full md:w-1/3' : 'h-0 md:h-full md:w-0' } 
-                overflow-y-auto
-                bg-black/40 shadow-2xl
-            `}
-        >
-           {selectedNode && <StarDetailView 
-                key={selectedNode.id} 
-                star={selectedNode} 
-                isAwakening={awakenedNodeId === selectedNode.id} 
-                onAttributeChange={handleAttributeChange} 
-                onSelectNext={() => handleNavigateNode('next')} 
-                onSelectPrev={() => handleNavigateNode('prev')} 
-                hasNext={true} 
-                hasPrev={true} 
-                readOnly={isReadOnly} 
-                attributeDefinitions={currentConstants.attributes} 
-                isMapComplete={isMapComplete}
-                isLastGlobalNode={isLastGlobalNode}
-                uiStrings={currentConstants.ui}
-            />}
-        </aside>
-      </div>
-
+      {/* 3. HEADER AREA (Logo, Title, Nav) */}
       <div data-name="header-logo-area" className="absolute top-0 left-0 p-4 md:p-8 z-30 pointer-events-none">
           <div className="flex flex-col items-start gap-4">
               <div className="flex items-center gap-4 pointer-events-auto">
@@ -657,88 +280,128 @@ const App: React.FC = () => {
       </div>
 
       <div data-name="header-menu-area" className={`absolute top-0 right-0 p-4 md:p-8 z-30 flex items-center gap-4 transition-all duration-1000 ease-in-out ${showDetailPanel ? 'md:right-1/3' : ''} pointer-events-none`}>
-        {/* Count removed from top-right, moved to bottom-left */}
-        <div className="relative pointer-events-auto">
-            <button onClick={() => setShowMenu(p => !p)} className={`p-3 rounded-full text-white/70 hover:text-white ${glassPanelStyle}`}><MenuIcon /></button>
-            {/* Menu Dropdown - Clean Glass Style */}
-            {showMenu && <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl overflow-hidden animate-fade-in flex flex-col py-1 ${glassPanelStyle}`}>
-                    
-                    {/* Menu Lang Toggle */}
-                    <div className="flex border-b border-white/5">
-                        <button onClick={() => handleLanguageChange('en')} className={`flex-1 py-2 text-xs font-bold ${language==='en' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}>EN</button>
-                        <div className="w-px bg-white/10"></div>
-                        <button onClick={() => handleLanguageChange('es')} className={`flex-1 py-2 text-xs font-bold ${language==='es' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}>ES</button>
-                        <div className="w-px bg-white/10"></div>
-                        <button onClick={() => handleLanguageChange('nl')} className={`flex-1 py-2 text-xs font-bold ${language==='nl' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}>NL</button>
-                    </div>
+          {/* Menu Button */}
+          <div className="relative pointer-events-auto">
+              <button onClick={() => setShowMenu(p => !p)} className={`p-3 rounded-full text-white/70 hover:text-white ${glassPanelStyle}`}><MenuIcon /></button>
+              {/* Menu Dropdown - Clean Glass Style */}
+              {showMenu && <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl overflow-hidden animate-fade-in flex flex-col py-1 ${glassPanelStyle}`}>
+                      
+                      {/* Menu Lang Toggle */}
+                      <div className="flex border-b border-white/5">
+                          <button onClick={() => handleLanguageChange('en')} className={`flex-1 py-2 text-xs font-bold ${language==='en' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}>EN</button>
+                          <div className="w-px bg-white/10"></div>
+                          <button onClick={() => handleLanguageChange('es')} className={`flex-1 py-2 text-xs font-bold ${language==='es' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}>ES</button>
+                          <div className="w-px bg-white/10"></div>
+                          <button onClick={() => handleLanguageChange('nl')} className={`flex-1 py-2 text-xs font-bold ${language==='nl' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white'}`}>NL</button>
+                      </div>
 
-                    {!isReadOnly && <><button onClick={() => setShowShareModal(true)} className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 text-left"><ShareIcon /> {currentConstants.ui.shareInnerverse}</button><button onClick={handleSave} className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 text-left border-b border-white/5"><SaveIcon /> {currentConstants.ui.saveProgress}</button></>}
-                    {isReadOnly && <button onClick={handleSave} className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 text-left border-b border-white/5"><LinkIcon /> {currentConstants.ui.copyLink}</button>}
-                    <button onClick={handleRequestReset} className="flex items-center gap-3 px-4 py-3 text-sm text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 text-left"><RestartIcon /> {currentConstants.ui.restart}</button>
-                </div>}
-        </div>
+                      {/* Share/Save Options - Hidden during Onboarding */}
+                      {!showInitialOnboarding && (
+                          <>
+                              {!isReadOnly && <><button onClick={() => setShowShareModal(true)} className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 text-left"><ShareIcon /> {currentConstants.ui.shareInnerverse}</button><button onClick={handleSave} className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 text-left border-b border-white/5"><SaveIcon /> {currentConstants.ui.saveProgress}</button></>}
+                              {isReadOnly && <button onClick={handleSave} className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-white/5 text-left border-b border-white/5"><LinkIcon /> {currentConstants.ui.copyLink}</button>}
+                          </>
+                      )}
+                      
+                      <button onClick={handleRequestReset} className="flex items-center gap-3 px-4 py-3 text-sm text-orange-400 hover:text-orange-300 hover:bg-orange-500/10 text-left"><RestartIcon /> {currentConstants.ui.restart}</button>
+                  </div>}
+          </div>
       </div>
 
       {isReadOnly && <div data-name="readonly-banner" className={`absolute bottom-20 md:bottom-8 left-1/2 -translate-x-1/2 z-40 px-6 py-3 rounded-full flex items-center gap-4 animate-fade-in ${glassPanelStyle}`}><span className="text-sm text-indigo-200">{currentConstants.ui.viewing} <strong>{viewingName || 'Shared'}</strong></span><button onClick={handleConfirmReset} className="px-4 py-1 bg-white/10 hover:bg-white/20 rounded-full text-xs uppercase tracking-widest text-white transition-colors">{currentConstants.ui.mapYourOwn}</button></div>}
 
-      {/* 
-         BOTTOM LEFT CONTROLS: Counter + Atlas Button 
-         - HIDE DURING ONBOARDING
-      */}
-      {!isAtlasViewActive && !isReadOnly && !showInitialOnboarding && (
-        <div 
-          data-name="bottom-controls-left" 
-          className={`absolute left-0 p-4 md:p-8 z-30 transition-all duration-1000 ease-in-out pointer-events-none flex flex-col items-start gap-4 ${showDetailPanel ? 'bottom-2/3 md:bottom-0 mb-2 md:mb-0' : 'bottom-0'}`}
-        >
-             {/* Progress Counter */}
-             <span className="text-sm text-white/60 tracking-wider pointer-events-auto pl-2">
-                {definedNodesCount} / 24 {currentConstants.ui.defined}
-             </span>
+      {/* 4. DETAIL PANEL (Side Slider) */}
+      <div 
+          data-name="detail-panel"
+          className={`
+            fixed top-0 right-0 h-full z-40 
+            w-full md:w-1/3 bg-slate-950/90 backdrop-blur-2xl border-l border-white/10 
+            transition-transform duration-500 ease-in-out shadow-2xl
+            ${showDetailPanel ? 'translate-x-0' : 'translate-x-full'}
+          `}
+      >
+          {selectedNode && (
+            <>
+                <button onClick={() => setSelectedNode(null)} className="absolute top-6 right-6 p-2 text-white/50 hover:text-white z-50">
+                    <CloseIcon />
+                </button>
+                <StarDetailView 
+                    star={selectedNode}
+                    isAwakening={false}
+                    onAttributeChange={handleAttributeChange}
+                    onSelectNext={handleSelectNext}
+                    onSelectPrev={handleSelectPrev}
+                    hasNext={hasNext}
+                    hasPrev={hasPrev}
+                    readOnly={isReadOnly}
+                    attributeDefinitions={currentConstants.definitions}
+                    isMapComplete={isMapComplete}
+                    uiStrings={currentConstants.ui}
+                />
+            </>
+          )}
+      </div>
 
-             {/* Check Pulse Button - Only shows when map is complete (24/24) */}
-             {isMapComplete && (
-                <div className="animate-fade-in pointer-events-auto">
-                    <button 
-                        onClick={handleEnterAtlasView} 
-                        className={`
-                            px-6 py-3 rounded-full text-white/90 text-sm tracking-widest uppercase 
-                            hover:text-white hover:scale-105 transition-all duration-300
-                            ${glassPanelStyle} animate-fade-in-up
-                        `}
-                        style={{ animationDuration: '1s' }}
-                    >
-                        <div className="flex items-center gap-2">
-                            {currentConstants.ui.openAtlas}
-                        </div>
-                    </button>
-                </div>
-             )}
-        </div>
+      {/* 5. ATLAS VIEW (Full Screen) */}
+      {isAtlasViewActive && (
+          <SoulAtlasView 
+              domains={domains}
+              mandalaData={mandalaData}
+              lensData={lensData}
+              primaryEnergyData={primaryEnergyData}
+              personalSpectrum={personalSpectrum}
+              onClose={() => setIsAtlasViewActive(false)}
+              uiStrings={currentConstants.ui}
+              attributeDefinitions={currentConstants.definitions}
+              language={language}
+              inquiryData={inquiryData}
+              setInquiryData={setInquiryData}
+          />
       )}
 
-      {/* ZOOM CONTROLS (Bottom Right) - High Z-Index to allow Fullscreen click on first screen */}
-      <div 
-          data-name="zoom-controls-area" 
-          className={`absolute right-0 p-4 md:p-8 z-[60] transition-all duration-1000 ease-in-out pointer-events-none ${showDetailPanel ? 'hidden md:flex md:right-1/3 md:bottom-0 md:mb-0' : 'bottom-0'}`}
-      >
-        {!isAtlasViewActive && (
-            <div className="flex flex-col gap-3 items-end">
-                 {/* Zoom Controls - Conditional Opacity & Vertical Stack */}
-                 <div className={`flex flex-col items-center rounded-full text-white/70 py-1 transition-all duration-500 pointer-events-auto ${!canZoom ? 'opacity-0 h-0 overflow-hidden' : 'opacity-30 hover:opacity-100'} ${glassPanelStyle}`}>
-                    <button onClick={handleZoomIn} className={`px-3 py-2 text-xl transition-colors hover:text-white`}><ZoomInIcon /></button>
-                    <div className="h-px w-4 bg-white/20"></div>
-                    <button onClick={handleZoomOut} className={`px-3 py-2 text-xl transition-colors hover:text-white`}><ZoomOutIcon /></button>
-                </div>
+      {/* 6. CONSTELLATION INSIGHT MODAL */}
+      <Modal show={showInsight} onClose={() => setShowInsight(false)} title="Insight" showCloseButton={true}>
+         {activeDomain && <ConstellationInsight quadrant={activeDomain} />}
+      </Modal>
 
-                {/* Fullscreen - Always visible */}
-                <button onClick={handleToggleFullscreen} className={`px-4 py-4 hover:text-white transition-colors rounded-full text-white/70 pointer-events-auto ${glassPanelStyle}`}>
-                    {isFullscreen ? <ExitFullscreenIcon /> : <EnterFullscreenIcon />}
-                </button>
-            </div>
-        )}
-      </div>
-    </main>
+      {/* 7. INSIGHT READY INDICATOR */}
+      {activeDomain && completedDomains[activeDomain.id] && !showDetailPanel && !isAtlasViewActive && !showInsight && (
+          <InsightReadyIndicator onClick={() => setShowInsight(true)} />
+      )}
+
+      {/* 8. ONBOARDING OVERLAY */}
+      {showInitialOnboarding && (
+        <Onboarding 
+            steps={currentConstants.steps}
+            onComplete={handleOnboardingComplete}
+            onStepChange={setOnboardingStep}
+            uiStrings={currentConstants.ui}
+            language={language}
+            onLanguageChange={setLanguage}
+            toggleWakeLock={toggleWakeLock}
+            isWakeLockActive={isWakeLockActive}
+        />
+      )}
+
+      {/* 9. INTRO TEXT OVERLAY */}
+      <IntroTextOverlay text={introText} />
+
+      {/* 10. MODALS */}
+      <Modal show={showResetModal} onClose={() => setShowResetModal(false)} title={currentConstants.ui.restartTitle}>
+          <p>{currentConstants.ui.restartConfirm}</p>
+          <div className="flex gap-4 justify-center mt-6">
+              <button onClick={() => setShowResetModal(false)} className="px-4 py-2 rounded-full border border-white/10 hover:bg-white/10">{currentConstants.ui.cancel}</button>
+              <button onClick={handleConfirmReset} className="px-4 py-2 rounded-full bg-red-500/80 hover:bg-red-500 text-white font-bold">{currentConstants.ui.confirm}</button>
+          </div>
+      </Modal>
+      
+      <Modal show={showShareModal} onClose={() => setShowShareModal(false)} title={currentConstants.ui.shareInnerverse}>
+          <p className="text-slate-300 mb-4">Sharing is disabled in this demo.</p>
+          <button onClick={() => setShowShareModal(false)} className="px-6 py-2 bg-white/10 rounded-full hover:bg-white/20">Close</button>
+      </Modal>
+
+    </div>
   );
-};
+}
 
 export default App;
