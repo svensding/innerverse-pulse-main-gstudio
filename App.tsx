@@ -1,5 +1,5 @@
 
-// ... (imports remain mostly same)
+// ... (imports remain same)
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Domain, Node, InquiryData, Language, LensData, PrimaryEnergyData, MandalaData, PersonalSpectrum } from './types';
 import { DOMAINS_DATA, UI_STRINGS, ONBOARDING_STEPS, ATTRIBUTE_DEFINITIONS } from './constants';
@@ -63,7 +63,9 @@ const encodeHash = (lang: Language, doms: Domain[]): string => {
     const hasData = values.some(v => v !== '_');
     
     if (!hasData) {
-        // If no data, just return language. This keeps URL clean on initial load.
+        // If no data and default lang, clear hash completely
+        if (lang === 'en') return '';
+        // If no data but custom lang, just return lang
         return lang;
     }
 
@@ -141,15 +143,17 @@ const AppContent: React.FC = () => {
   useEffect(() => {
       try {
           const hash = encodeHash(language, domains);
-          // Only replace if the hash is different to avoid redundant calls
-          // We use window.location.hash to get the current state
           const currentHash = window.location.hash.substring(1);
+          // Don't replace if identical, avoids tight loop
           if (currentHash !== hash) {
-              window.history.replaceState(null, '', `#${hash}`);
+              if (hash === '') {
+                  // Clean URL if empty
+                  window.history.replaceState(null, '', window.location.pathname);
+              } else {
+                  window.history.replaceState(null, '', `#${hash}`);
+              }
           }
       } catch (e) {
-          // In some environments (sandboxes, iframes), replacing state might fail.
-          // We catch this to prevent the app from crashing.
           console.warn('Could not update URL hash:', e);
       }
   }, [language, domains]);
@@ -224,6 +228,8 @@ const AppContent: React.FC = () => {
       setSelectedNode(null);
       setIsAtlasViewActive(false);
       setShowInsight(false);
+      // We still call reset here because handleGoHome might be called when activeDomain is ALREADY null 
+      // (e.g. user panned away manually), so the effect dependency won't trigger.
       skyMapRef.current?.reset();
   };
 
@@ -234,8 +240,10 @@ const AppContent: React.FC = () => {
               // Zoom back to active domain
           }
       } else if (activeDomain) {
+          // Setting activeDomain to null triggers the useEffect in SkyMap to reset the view.
+          // We DO NOT call skyMapRef.current.reset() here because it creates an infinite loop 
+          // (reset -> onDeselect -> handleBack -> reset)
           setActiveDomain(null);
-          skyMapRef.current?.reset();
       }
   };
 
@@ -364,7 +372,10 @@ const AppContent: React.FC = () => {
   }, [domains]);
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-slate-950 text-white selection:bg-amber-500/30">
+    <div 
+        className="relative w-full h-full overflow-hidden bg-slate-950 text-white selection:bg-amber-500/30"
+        style={{ position: 'relative', width: '100vw', height: '100vh', backgroundColor: '#020617' }} // Inline fallback
+    >
       
       {/* 0. GLOBAL FILTERS */}
       <GlobalFilters />
@@ -392,7 +403,11 @@ const AppContent: React.FC = () => {
       />
 
       {/* 3. HEADER AREA (Logo, Title, Nav) */}
-      <div data-name="header-logo-area" className="absolute top-0 left-0 p-4 md:p-8 z-30 pointer-events-none">
+      <div 
+        data-name="header-logo-area" 
+        className="absolute top-0 left-0 p-4 md:p-8 z-30 pointer-events-none"
+        style={{ position: 'absolute', top: 0, left: 0, zIndex: 30 }} // Inline fallback
+      >
           <div className="flex flex-col items-start gap-4">
               <div className="flex items-center gap-4 pointer-events-auto">
                   {/* Pulse Logo - Always visible in Map View unless in Atlas */}
@@ -417,12 +432,25 @@ const AppContent: React.FC = () => {
           </div>
       </div>
 
-      <div data-name="header-menu-area" className={`absolute top-0 right-0 p-4 md:p-8 z-30 flex items-center gap-4 transition-all duration-1000 ease-in-out ${showDetailPanel ? 'md:right-1/3' : ''} pointer-events-none`}>
+      <div 
+        data-name="header-menu-area" 
+        className={`absolute top-0 right-0 p-4 md:p-8 z-30 flex items-center gap-4 transition-all duration-1000 ease-in-out ${showDetailPanel ? 'md:right-1/3' : ''} pointer-events-none`}
+        style={{ position: 'absolute', top: 0, right: 0, zIndex: 30 }} // Inline fallback
+      >
           {/* Menu Button */}
           <div className="relative pointer-events-auto">
-              <button onClick={() => setShowMenu(p => !p)} className={`p-3 rounded-full text-white/70 hover:text-white ${glassPanelStyle}`}><MenuIcon /></button>
+              <button 
+                onClick={() => setShowMenu(p => !p)} 
+                className={`p-3 rounded-full text-white/70 hover:text-white ${glassPanelStyle}`}
+                style={{ backgroundColor: 'rgba(30, 41, 59, 0.8)', border: '1px solid rgba(255,255,255,0.1)', color: 'white' }} // Inline fallback
+              >
+                <MenuIcon />
+              </button>
               {/* Menu Dropdown */}
-              {showMenu && <div className={`absolute top-full right-0 mt-2 w-48 rounded-xl overflow-hidden animate-fade-in flex flex-col py-1 ${glassPanelStyle}`}>
+              {showMenu && <div 
+                className={`absolute top-full right-0 mt-2 w-48 rounded-xl overflow-hidden animate-fade-in flex flex-col py-1 ${glassPanelStyle}`}
+                style={{ position: 'absolute', top: '100%', right: 0, width: '12rem', backgroundColor: '#0f172a', border: '1px solid #334155', zIndex: 40 }}
+              >
                       
                       {/* Menu Lang Toggle */}
                       <div className="flex border-b border-white/5">
@@ -464,6 +492,7 @@ const AppContent: React.FC = () => {
             border-l border-white/10 
             ${showDetailPanel ? 'translate-x-0' : 'translate-x-full'}
           `}
+          style={{ position: 'fixed', top: 0, right: 0, height: '100%', zIndex: 40, transform: showDetailPanel ? 'translateX(0)' : 'translateX(100%)' }} // Inline fallback
       >
           {selectedNode && (
             <StarDetailView 

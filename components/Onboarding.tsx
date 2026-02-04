@@ -280,12 +280,15 @@ const Onboarding: React.FC<OnboardingProps> = ({
   return (
     <div 
       className="fixed top-0 left-0 w-full z-[100] pointer-events-none flex flex-col justify-end items-center pb-20 md:pb-40 px-6 text-white"
-      style={{ transform: 'translate3d(0,0,0)', height: 'var(--app-height, 100vh)', color: 'white' }}
+      style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: 'var(--app-height, 100vh)', zIndex: 100, color: 'white', transform: 'translate3d(0,0,0)' }} // Inline positioning fallback
     >
       
       {/* START SCREEN */}
       {!hasStarted && step === 0 && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-auto bg-slate-950/80 backdrop-blur-sm z-[101]">
+          <div 
+            className="absolute inset-0 flex flex-col items-center justify-center pointer-events-auto bg-slate-950/80 backdrop-blur-sm z-[101]"
+            style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(2, 6, 23, 0.9)', zIndex: 101 }} // Inline fallback
+          >
              <div className="w-full max-w-2xl px-6 flex flex-col items-center gap-12 animate-fade-in">
                 {renderTextParts()}
                 <div className="flex flex-col items-center gap-6">
@@ -293,14 +296,14 @@ const Onboarding: React.FC<OnboardingProps> = ({
                          <button 
                               onClick={handleBegin}
                               className={`px-10 py-4 rounded-full text-white/90 text-sm ${glassStyle}`}
-                              style={{ color: 'white' }}
+                              style={{ color: 'white', border: '1px solid rgba(255,255,255,0.2)', padding: '16px 40px', borderRadius: '9999px', backgroundColor: 'rgba(0,0,0,0.4)' }}
                           >
                               {uiStrings.begin}
                           </button>
                           <button 
                               onClick={onComplete}
                               className="px-6 py-4 rounded-full text-white/40 hover:text-white transition-all text-xs"
-                              style={{ color: '#94a3b8' }}
+                              style={{ color: '#94a3b8', padding: '16px 24px', borderRadius: '9999px' }}
                           >
                               {uiStrings.skip}
                           </button>
@@ -359,6 +362,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
                       <button 
                           onClick={onComplete}
                           className={`px-10 py-4 rounded-full text-amber-100 text-sm ${glassStyle} border-amber-500/30 animate-pulse`}
+                          style={{ color: '#fef3c7', border: '1px solid rgba(245, 158, 11, 0.3)', padding: '16px 40px', borderRadius: '9999px', backgroundColor: 'rgba(0,0,0,0.4)' }}
                       >
                           {uiStrings.explore}
                       </button>

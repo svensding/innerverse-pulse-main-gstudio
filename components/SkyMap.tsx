@@ -142,10 +142,7 @@ const CoreEnergyLabel: React.FC<{
     );
 };
 
-// ... (Rest of file unchanged, just re-exporting SkyMap to include the import usePerformance)
-
 const LensDemo = React.memo(({ step, uiStrings }: { step: number, uiStrings: UIStrings }) => {
-    // ... (No changes here, copied for context)
     const [state, setState] = useState({
         roughness: 0,
         spread: 0,
@@ -244,7 +241,7 @@ const SkyMap = forwardRef<{ zoomIn: () => void; zoomOut: () => void }, SkyMapPro
       reset: () => {
         transformRef.current = { x: 0, y: 0, scale: 0.65 };
         updateTransform(1.5);
-        onDeselect();
+        // Removed onDeselect() here to prevent infinite recursion if parent calls reset()
       }
     }));
 
