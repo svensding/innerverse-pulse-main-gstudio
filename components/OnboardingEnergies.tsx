@@ -38,8 +38,7 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
         
         // During Mixing/Map view (Step 10+ or 99)
         // We boost opacity here because we rely on the animation to pulse it.
-        // If we set it too low here, the base level is invisible.
-        if (isMixing) return 0.6; 
+        if (isMixing) return 0.8; // Increased from 0.6 for better visibility
         
         // During Pause Step (9), all should be bright and visible to mix
         if (isPause) return 1.0;
@@ -98,12 +97,12 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
                 /* Infinite loop for mixing - BOOSTED OPACITY */
                 @keyframes pulse-mixing {
                     0% { transform: scale(0.8); opacity: 0; }
-                    20% { opacity: 0.8; } /* Boosted from 0.5 to 0.8 for visibility */
+                    20% { opacity: 0.8; }
                     100% { transform: scale(3.5); opacity: 0; }
                 }
                 @keyframes pulse-white {
                     0% { transform: scale(0.1); opacity: 0; }
-                    10% { opacity: 0.8; }
+                    10% { opacity: 0.5; } /* Lower opacity so colors shine through */
                     100% { transform: scale(3.5); opacity: 0; }
                 }
             `}</style>
@@ -179,14 +178,14 @@ const OnboardingEnergies: React.FC<OnboardingEnergiesProps> = ({ onboardingStep,
                     }}
                 />
 
-                {/* Pure White Core (The Source) - Always active but prominent in pause */}
+                {/* Pure White Core - Lower opacity to prevent washing out colors */}
                 <div 
                     className="absolute border border-white/20 z-10"
                     style={{
                         width: '40vmin', height: '40vmin', borderRadius: '50%',
                         animation: settings.animations ? 'pulse-white 16s infinite linear' : 'none',
                         boxShadow: '0 0 40px rgba(255,255,255,0.1)',
-                        opacity: isZoomed ? 0.1 : (isPause ? 1 : 0.6)
+                        opacity: isZoomed ? 0.1 : (isPause ? 1 : 0.2) // Significantly reduced mixing opacity
                     }}
                 />
             </div>

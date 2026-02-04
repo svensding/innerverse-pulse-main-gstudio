@@ -182,13 +182,14 @@ const AppContent: React.FC = () => {
   const allNodes = useMemo(() => domains.flatMap(d => d.nodes), [domains]);
   
   const handleSelectNext = () => {
-      if (!selectedNode) return;
-      
       // If map is fully complete, the "Next" button acts as "Finish"
       if (isMapComplete) {
-          handleGoHome();
+          setSelectedNode(null); // Close the panel
+          handleBack(); // Zoom out to domain or home
           return;
       }
+
+      if (!selectedNode) return;
 
       const currentIndex = allNodes.findIndex(n => n.id === selectedNode.id);
       if (currentIndex === -1) return;
