@@ -31,6 +31,33 @@ import LinkIcon from './components/icons/LinkIcon';
 import RestartIcon from './components/icons/RestartIcon';
 import CloseIcon from './components/icons/CloseIcon';
 
+// --- HASH UTILS ---
+const decodeHash = (): { language: Language, values: (number | null)[] | null } | null => {
+  const hash = window.location.hash.substring(1); // Remove #
+  if (!hash) return null;
+  
+  const [langCode, dataStr] = hash.split('/');
+  
+  // Validate Language
+  const validLang = ['en', 'es', 'nl'].includes(langCode) ? (langCode as Language) : 'en';
+  
+  // If only language is present (e.g. #es), return that with no data
+  if (!dataStr) return { language: validLang, values: null };
+
+  const values = dataStr.split('!').map(v => v === '_' ? null : parseInt(v, 10));
+  // Validate length (4 domains * 6 nodes * 3 attributes = 72)
+  // If invalid, ignore data but keep language
+  if (values.length !== 72) return { language: validLang, values: null };
+
+  return { language: validLang, values };
+};
+
+const encodeHash = (lang: Language, doms: Domain[]): string => {
+    const values = doms.flatMap(d => d.nodes.flatMap(n => n.attributes.map(a => a.value === null ? '_' : a.value)));
+    const dataStr = values.join('!');
+    return `${lang}/${dataStr}`;
+};
+
 const AppContent: React.FC = () => {
   // Access performance settings for styling logic
   const { settings } = usePerformance();
@@ -38,13 +65,42 @@ const AppContent: React.FC = () => {
     ? "bg-black/20 backdrop-blur-xl border border-white/10 shadow-xl" 
     : "bg-slate-900/95 border border-white/20 shadow-xl";
 
+  // --- INITIALIZATION FROM URL ---
+  // We parse the hash once on mount to set initial state
+  const initialData = useMemo(() => decodeHash(), []);
+  const hasSavedData = initialData?.values && initialData.values.some(v => v !== null);
+
   // --- STATE ---
-  const [language, setLanguage] = useState<Language>('en');
-  const [domains, setDomains] = useState<Domain[]>(DOMAINS_DATA);
+  const [language, setLanguage] = useState<Language>(initialData?.language || 'en');
+  
+  const [domains, setDomains] = useState<Domain[]>(() => {
+      // Start with base English structure
+      const base = JSON.parse(JSON.stringify(DOMAINS_DATA));
+      
+      // If we have saved values, hydrate them into the structure
+      if (initialData?.values) {
+          let i = 0;
+          base.forEach((d: Domain) => {
+              d.nodes.forEach((n: Node) => {
+                  n.attributes.forEach((a: any) => {
+                      if (i < initialData.values!.length) {
+                          a.value = initialData.values![i];
+                          i++;
+                      }
+                  });
+              });
+          });
+      }
+      return base;
+  });
+
   const [activeDomain, setActiveDomain] = useState<Domain | null>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
-  const [onboardingStep, setOnboardingStep] = useState(0);
-  const [showInitialOnboarding, setShowInitialOnboarding] = useState(true);
+  
+  // Skip onboarding if we loaded data from URL
+  const [onboardingStep, setOnboardingStep] = useState(hasSavedData ? 99 : 0);
+  const [showInitialOnboarding, setShowInitialOnboarding] = useState(!hasSavedData);
+  
   const [isAtlasViewActive, setIsAtlasViewActive] = useState(false);
   const [isWakeLockActive, setIsWakeLockActive] = useState(false);
   
@@ -66,6 +122,14 @@ const AppContent: React.FC = () => {
 
   const skyMapRef = useRef<{ zoomIn: () => void; zoomOut: () => void; reset: () => void }>(null);
   const wakeLockSentinel = useRef<WakeLockSentinel | null>(null);
+
+  // --- URL SYNC EFFECT ---
+  // Whenever language or domains change, update the URL hash
+  useEffect(() => {
+      const hash = encodeHash(language, domains);
+      // Use replaceState to avoid cluttering history stack with every slider move
+      window.history.replaceState(null, '', `#${hash}`);
+  }, [language, domains]);
 
   // --- DERIVED CONSTANTS ---
   const currentConstants = useMemo(() => {
@@ -250,6 +314,8 @@ const AppContent: React.FC = () => {
       handleGoHome();
       setOnboardingStep(0);
       setShowInitialOnboarding(true);
+      // Clear hash
+      window.history.replaceState(null, '', window.location.pathname);
   };
   
   const handleOnboardingComplete = () => {
@@ -425,7 +491,7 @@ const AppContent: React.FC = () => {
             onStepChange={setOnboardingStep}
             uiStrings={currentConstants.ui}
             language={language}
-            onLanguageChange={setLanguage}
+            onLanguageChange={handleLanguageChange} // Fix: use handler to close menu
             toggleWakeLock={toggleWakeLock}
             isWakeLockActive={isWakeLockActive}
         />
